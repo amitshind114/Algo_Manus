@@ -58,7 +58,7 @@ This is an engineering and research repository, not a signal-selling, advisory o
 
 ## Next milestone
 
-The first repository commit consists only of this product description and the phased roadmap in [`docs/ROADMAP.md`](docs/ROADMAP.md). After the documentation gate, the next proposed work is to define canonical domain contracts and an executable-free data/instrument research skeleton.
+The repository now includes the high-level [`docs/ROADMAP.md`](docs/ROADMAP.md) and detailed ten-phase [`docs/MASTER_DELIVERY_PLAN.md`](docs/MASTER_DELIVERY_PLAN.md). After the documentation gate, the next proposed work is to define canonical domain contracts and an executable-free data/instrument research skeleton.
 
 ## Research basis
 
