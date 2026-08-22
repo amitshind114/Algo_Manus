@@ -1,0 +1,36 @@
+# Local environments and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node and build artefacts
+node_modules/
+dist/
+build/
+.next/
+
+# Local data, runtime state and audit exports
+data/
+runtime/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
