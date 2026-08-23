@@ -16,6 +16,14 @@ from algo_manus.domain.experiment import (
     SecurityExperimentResult,
 )
 from algo_manus.domain.market_data import CandleDataset, DataUseCase
+from algo_manus.domain.research import (
+    DataValidationStatus,
+    DatasetLineage,
+    DatasetValidationOutcome,
+    ResearchExecutionAssumptions,
+    ResearchRunManifest,
+    ResearchRunManifestRepository,
+)
 from algo_manus.domain.strategy import Strategy, StrategyParameterRevision
 
 
@@ -43,9 +51,18 @@ class BatchBacktestRequest:
 class ExperimentBatchService:
     """Runs one strategy revision under identical assumptions across a universe."""
 
-    def __init__(self, backtester: BarBacktestService, repository: ExperimentBatchRepository) -> None:
+    _ENGINE_VERSION = "bar-backtest-v1"
+    _VALIDATION_POLICY_VERSION = "research-contract-v1"
+
+    def __init__(
+        self,
+        backtester: BarBacktestService,
+        repository: ExperimentBatchRepository,
+        manifest_repository: ResearchRunManifestRepository,
+    ) -> None:
         self._backtester = backtester
         self._repository = repository
+        self._manifest_repository = manifest_repository
 
     def run(
         self,
@@ -94,6 +111,8 @@ class ExperimentBatchService:
             sort_keys=True,
             separators=(",", ":"),
         )
+        manifest = self._manifest(request, strategy, parameters, datasets, timestamp)
+        self._manifest_repository.save(manifest)
         batch = ExperimentBatch(
             batch_id=f"EXP-{sha256(canonical.encode()).hexdigest()[:20]}",
             universe_id=request.universe_id,
@@ -103,6 +122,7 @@ class ExperimentBatchService:
             created_at=timestamp,
             status=ExperimentStatus.RESEARCH_ONLY,
             results=tuple(result_items),
+            research_manifest_id=manifest.manifest_id,
         )
         self._repository.save(batch)
         return batch
@@ -115,3 +135,45 @@ class ExperimentBatchService:
             raise ValueError("all datasets in a comparable batch need the same interval and adjustment basis")
         if any(dataset.provenance.use_case is not DataUseCase.RESEARCH for dataset in datasets):
             raise ValueError("multi-security backtests require research-use datasets")
+
+    def _manifest(
+        self,
+        request: BatchBacktestRequest,
+        strategy: Strategy,
+        parameters: StrategyParameterRevision,
+        datasets: tuple[CandleDataset, ...],
+        created_at: datetime,
+    ) -> ResearchRunManifest:
+        """Construct evidence from already-validated local research inputs only."""
+
+        lineages = tuple(DatasetLineage.from_dataset(dataset) for dataset in datasets)
+        validations = tuple(
+            DatasetValidationOutcome(
+                dataset_id=lineage.dataset_id,
+                status=DataValidationStatus.ACCEPTED,
+                policy_version=self._VALIDATION_POLICY_VERSION,
+                validated_at=created_at,
+            )
+            for lineage in lineages
+        )
+        timestamps = tuple(candle.timestamp for dataset in datasets for candle in dataset.candles)
+        return ResearchRunManifest(
+            universe_id=request.universe_id,
+            universe_snapshot_id=request.universe_snapshot_id,
+            strategy_id=strategy.metadata.strategy_id,
+            strategy_version=strategy.metadata.version,
+            parameter_revision_id=parameters.revision_id,
+            engine_version=self._ENGINE_VERSION,
+            lineages=lineages,
+            validation_outcomes=validations,
+            execution_assumptions=ResearchExecutionAssumptions(
+                initial_cash=request.initial_cash,
+                quantity=request.quantity,
+                commission_bps=request.commission_bps,
+                slippage_bps=request.slippage_bps,
+            ),
+            start=min(timestamps),
+            end=max(timestamps),
+            information_cutoff=max(timestamps),
+            created_at=created_at,
+        )

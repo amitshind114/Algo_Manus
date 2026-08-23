@@ -24,6 +24,7 @@ from algo_manus.domain.market_data import (
     DataUseCase,
 )
 from algo_manus.domain.strategy import StrategyParameterRevision
+from algo_manus.domain.research import ResearchRunManifest
 from algo_manus.strategies.sma_crossover import SmaCrossoverStrategy
 
 FIXTURE_MODE_LABEL = "Fixture mode — deterministic local sample data; not broker or market data"
@@ -46,6 +47,22 @@ class _MemoryExperimentRepository:
 
     def get(self, batch_id: str) -> ExperimentBatch | None:
         return self._batches.get(batch_id)
+
+
+class _MemoryResearchManifestRepository:
+    """Fixture-only evidence repository; Streamlit state still owns visible history."""
+
+    def __init__(self) -> None:
+        self._manifests: dict[str, ResearchRunManifest] = {}
+
+    def save(self, manifest: ResearchRunManifest) -> None:
+        self._manifests.setdefault(manifest.manifest_id, manifest)
+
+    def get(self, manifest_id: str) -> ResearchRunManifest | None:
+        return self._manifests.get(manifest_id)
+
+    def list_recent(self, limit: int = 20) -> tuple[ResearchRunManifest, ...]:
+        return tuple(self._manifests.values())[-limit:]
 
 
 class FixtureWorkbenchService:
@@ -93,7 +110,11 @@ class FixtureWorkbenchService:
             "sma_crossover", {"fast_window": fast_window, "slow_window": slow_window}
         )
         datasets = {instrument_id: self._dataset(instrument_id) for instrument_id in selected_instrument_ids}
-        return ExperimentBatchService(BarBacktestService(), _MemoryExperimentRepository()).run(
+        return ExperimentBatchService(
+            BarBacktestService(),
+            _MemoryExperimentRepository(),
+            _MemoryResearchManifestRepository(),
+        ).run(
             request=BatchBacktestRequest(
                 universe_id="fixture-nse-equity-universe",
                 universe_snapshot_id="FIXTURE-SNAPSHOT-LOCAL-V1",

@@ -33,12 +33,15 @@ class ExperimentBatch:
     created_at: datetime
     status: ExperimentStatus
     results: tuple[SecurityExperimentResult, ...]
+    research_manifest_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.created_at.tzinfo is None:
             raise ValueError("created_at must be timezone-aware")
         if not self.results:
             raise ValueError("an experiment batch requires at least one security result")
+        if self.research_manifest_id is not None and not self.research_manifest_id.strip():
+            raise ValueError("research manifest ID cannot be blank when supplied")
         if len({result.instrument_id for result in self.results}) != len(self.results):
             raise ValueError("experiment batch cannot contain duplicate instruments")
         for result in self.results:

@@ -7,11 +7,13 @@ import tempfile
 import unittest
 
 from algo_manus.application.backtesting import BarBacktestService
+from algo_manus.application.experiment_evidence import ExperimentEvidenceReadService
 from algo_manus.application.experiments import BatchBacktestRequest, ExperimentBatchService
 from algo_manus.application.leaderboard import LeaderboardService, LeaderboardSort
 from algo_manus.domain.market_data import Candle, CandleDataset, DataProvenance, DataSourceKind, DataUseCase
 from algo_manus.domain.strategy import StrategyParameterRevision
 from algo_manus.infrastructure.experiments.sqlite_repository import SqliteExperimentBatchRepository
+from algo_manus.infrastructure.research import SqliteResearchEvidenceRepository
 from algo_manus.strategies.sma_crossover import SmaCrossoverStrategy
 
 
@@ -19,6 +21,7 @@ class ExperimentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.repository = SqliteExperimentBatchRepository(Path(self.temp_dir.name) / "experiments.sqlite3")
+        self.manifests = SqliteResearchEvidenceRepository(Path(self.temp_dir.name) / "research_evidence.sqlite3")
         self.start = datetime(2026, 8, 3, 9, 15, tzinfo=timezone.utc)
 
     def tearDown(self) -> None:
@@ -69,7 +72,7 @@ class ExperimentTests(unittest.TestCase):
         parameters = StrategyParameterRevision.create(
             "sma_crossover", {"fast_window": 2, "slow_window": 3}
         )
-        batch = ExperimentBatchService(BarBacktestService(), self.repository).run(
+        batch = ExperimentBatchService(BarBacktestService(), self.repository, self.manifests).run(
             request=request,
             strategy=SmaCrossoverStrategy(),
             parameters=parameters,
@@ -77,9 +80,15 @@ class ExperimentTests(unittest.TestCase):
         )
 
         restored = self.repository.get(batch.batch_id)
+        evidence = ExperimentEvidenceReadService(self.repository, self.manifests).get(batch.batch_id)
         rows = LeaderboardService().rows(batch, LeaderboardSort.NET_PNL)
 
         self.assertIsNotNone(restored)
+        self.assertIsNotNone(batch.research_manifest_id)
+        self.assertEqual(restored.research_manifest_id, batch.research_manifest_id)
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence.manifest.manifest_id, batch.research_manifest_id)
+        self.assertEqual(evidence.manifest.strategy_version, "1.0.0")
         self.assertEqual(len(restored.results), 2)
         self.assertGreaterEqual(rows[0].net_pnl, rows[1].net_pnl)
         expected_specs = {

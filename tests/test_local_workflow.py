@@ -22,6 +22,7 @@ from algo_manus.domain.risk import (
 from algo_manus.domain.strategy import StrategyParameterRevision
 from algo_manus.infrastructure.experiments.sqlite_repository import SqliteExperimentBatchRepository
 from algo_manus.infrastructure.paper.sqlite_ledger import SqlitePaperLedger
+from algo_manus.infrastructure.research import SqliteResearchEvidenceRepository
 from algo_manus.strategies.sma_crossover import SmaCrossoverStrategy
 from tests.fixtures import snapshot
 
@@ -69,7 +70,8 @@ class LocalWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             experiments = SqliteExperimentBatchRepository(base / "experiments.sqlite3")
-            batch = ExperimentBatchService(BarBacktestService(), experiments).run(
+            manifests = SqliteResearchEvidenceRepository(base / "research_evidence.sqlite3")
+            batch = ExperimentBatchService(BarBacktestService(), experiments, manifests).run(
                 request=BatchBacktestRequest(
                     universe_id=universe.universe_id,
                     universe_snapshot_id=universe.snapshot_id,
@@ -112,6 +114,7 @@ class LocalWorkflowTests(unittest.TestCase):
             )
 
             self.assertEqual(rows[0].instrument_id, instrument_id)
+            self.assertIsNotNone(manifests.get(batch.research_manifest_id))
             self.assertTrue(submission.decision.allowed)
             self.assertEqual(filled.fill_price, 101)
             self.assertEqual(len(ledger.events_for("local-workflow-paper-order")), 3)

@@ -46,10 +46,17 @@ class SqliteExperimentBatchRepository:
                     strategy_id TEXT NOT NULL,
                     parameter_revision_id TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    status TEXT NOT NULL
+                    status TEXT NOT NULL,
+                    research_manifest_id TEXT
                 )
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(experiment_batches)").fetchall()
+            }
+            if "research_manifest_id" not in columns:
+                connection.execute("ALTER TABLE experiment_batches ADD COLUMN research_manifest_id TEXT")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS experiment_results (
@@ -82,8 +89,8 @@ class SqliteExperimentBatchRepository:
             connection.execute(
                 """
                 INSERT INTO experiment_batches
-                (batch_id, universe_id, universe_snapshot_id, strategy_id, parameter_revision_id, created_at, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (batch_id, universe_id, universe_snapshot_id, strategy_id, parameter_revision_id, created_at, status, research_manifest_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     batch.batch_id,
@@ -93,6 +100,7 @@ class SqliteExperimentBatchRepository:
                     batch.parameter_revision_id,
                     batch.created_at.isoformat(),
                     batch.status.value,
+                    batch.research_manifest_id,
                 ),
             )
             connection.executemany(
@@ -173,4 +181,5 @@ class SqliteExperimentBatchRepository:
             created_at=datetime.fromisoformat(batch_row["created_at"]),
             status=ExperimentStatus(batch_row["status"]),
             results=results,
+            research_manifest_id=batch_row["research_manifest_id"],
         )

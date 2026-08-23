@@ -40,6 +40,12 @@ The default local implementation is `SqliteResearchEvidenceRepository`. It persi
 
 The storage implementation remains local SQLite only. A future database implementation may satisfy the same repository boundary, but no cloud database, data provider, broker or background service is implied by this capability.
 
+## Integrated experiment workflow
+
+The multi-security experiment application service now creates an `ACCEPTED` local research manifest only after it has confirmed comparable research-use datasets and completed the existing backtest calculations. The manifest is persisted before the batch is saved, and the batch retains the immutable `research_manifest_id` reference. Existing batch ID calculation, backtest specifications, trades, leaderboard rows and fixture values are unchanged.
+
+`ExperimentEvidenceReadService` joins an existing persisted batch to the manifest it references and returns a typed read-only view. A future terminal evidence panel can use this view to show the true snapshot, strategy version, dataset checksum and execution assumptions rather than derive those facts from UI session state.
+
 ## What this phase does not claim
 
 The presence of a manifest does not prove data quality, profitability, robustness, paper eligibility or live readiness. Fixture datasets remain clearly labelled fixtures. Real provider/adaptor work, point-in-time source availability, portfolio allocation, walk-forward validation and promotion gates require separately approved future phases.
@@ -51,6 +57,6 @@ make lint
 make test
 ```
 
-The suite verifies deterministic IDs across different creation times, rejects non-research/quarantined/rejected inputs, blocks a validation outcome that attempts to silently accept an error, round-trips evidence through SQLite, rejects conflicting immutable outcomes and releases database handles for local file cleanup.
+The suite verifies deterministic IDs across different creation times, rejects non-research/quarantined/rejected inputs, blocks a validation outcome that attempts to silently accept an error, round-trips evidence through SQLite, rejects conflicting immutable outcomes, releases database handles for local file cleanup and proves experiment batches retain a retrievable manifest reference without changing leaderboard output.
 
 This is research and analysis only, not personalized financial advice.
