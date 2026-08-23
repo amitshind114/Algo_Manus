@@ -29,6 +29,10 @@ from algo_manus.application.evidence_health_history import (
     LocalEvidenceHealthHistoryReadService,
     LocalEvidenceHealthHistoryRow,
 )
+from algo_manus.application.evidence_health_scope import (
+    LocalEvidenceHealthScope,
+    LocalEvidenceHealthScopeReadService,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -326,6 +330,21 @@ class FixtureWorkbenchService:
         """Return chronological retained local health coverage only; no result is changed."""
 
         return LocalEvidenceHealthHistoryReadService(self._batches).list()
+
+    def evidence_health_scope(
+        self,
+        *,
+        batch_id: str | None = None,
+        created_from: datetime | None = None,
+        created_until: datetime | None = None,
+    ) -> LocalEvidenceHealthScope:
+        """Filter retained local health evidence only; no record or workflow is changed."""
+
+        return LocalEvidenceHealthScopeReadService(self._batches).read(
+            batch_id=batch_id,
+            created_from=created_from,
+            created_until=created_until,
+        )
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):

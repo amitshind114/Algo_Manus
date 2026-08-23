@@ -37,6 +37,8 @@ The lifecycle panel’s **Health detail filter** exposes read-only batch/instrum
 
 The lifecycle panel’s **Chronological local health history** groups current retained artifact-health status counts by batch and displays them oldest-to-newest. It is a present local-state view only; it does not infer what changed, repair evidence, or establish market/strategy history. See `docs/LOCAL_EVIDENCE_HEALTH_HISTORY.md` for interpretation and limits.
 
+The lifecycle panel’s shared **Lifecycle batch scope** and **Inclusive batch creation dates** controls apply the same local read-only scope to health totals, detail rows and chronological history. Dates are inclusive over the selected local calendar days. The controls only filter what is displayed; they do not change retained evidence, integrity status, promotion or paper behavior. See `docs/LOCAL_EVIDENCE_HEALTH_SCOPE.md` for semantics and limits.
+
 The local strategy catalog is now backed by an explicit in-process registry. The SMA crossover is the only registered reference implementation. Each future strategy must declare versioned metadata, supported instrument types and intervals, a strict parameter schema, risk notes and pure signal behavior. Strategies cannot receive database, provider, broker, UI or execution access; they may not submit orders directly.
 
 The interface cannot authenticate a broker, fetch market data, bypass paper risk policy or enable live execution. Those responsibilities stay in provider adapters and application services, with separate approval gates. After a broker-master and research-data gate is approved, the same workbench controls will move from labelled fixture inputs to validated broker-authoritative instruments and datasets.

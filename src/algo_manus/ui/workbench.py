@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 import json
 import os
 from pathlib import Path
@@ -171,8 +171,40 @@ def _overview(st, service, pd) -> None:
             st.caption(f"Snapshot: {batch.universe_snapshot_id}")
     with st.expander("Local evidence lifecycle", expanded=False):
         lifecycle = service.evidence_lifecycle()
-        health = service.evidence_health()
+        all_history = service.evidence_health_history()
         st.caption("Read-only local fixture-store visibility. No cleanup, deletion, compaction, backup or cloud synchronization action is available here.")
+        if all_history:
+            scope_left, scope_right = st.columns(2)
+            selected_scope_batch = scope_left.selectbox(
+                "Lifecycle batch scope",
+                ["All retained batches", *(item.batch_id for item in all_history)],
+                key="lifecycle_batch_scope",
+            )
+            earliest = min(item.created_at for item in all_history).date()
+            latest = max(item.created_at for item in all_history).date()
+            selected_dates = scope_right.date_input(
+                "Inclusive batch creation dates",
+                value=(earliest, latest),
+                min_value=earliest,
+                max_value=latest,
+                key="lifecycle_creation_scope",
+            )
+            if isinstance(selected_dates, tuple) and len(selected_dates) == 2:
+                created_from = datetime.combine(selected_dates[0], time.min, tzinfo=timezone.utc)
+                created_until = datetime.combine(selected_dates[1], time.max, tzinfo=timezone.utc)
+            else:
+                created_from = datetime.combine(earliest, time.min, tzinfo=timezone.utc)
+                created_until = datetime.combine(latest, time.max, tzinfo=timezone.utc)
+            scope = service.evidence_health_scope(
+                batch_id=None if selected_scope_batch == "All retained batches" else selected_scope_batch,
+                created_from=created_from,
+                created_until=created_until,
+            )
+            st.caption(f"Current local scope: {selected_scope_batch}; batch creation dates {selected_dates[0]} through {selected_dates[1]}. Scope changes only what is displayed.")
+        else:
+            scope = service.evidence_health_scope()
+            st.info("No retained local experiment batches are available for lifecycle scope filtering.")
+        health = scope.health
         first, second, third = st.columns(3)
         first.metric("Store", "Local SQLite" if lifecycle.is_persistent else "In-memory fixture")
         second.metric("Stored batches", lifecycle.batch_count)
@@ -210,7 +242,7 @@ def _overview(st, service, pd) -> None:
             hide_index=True,
             width="stretch",
         )
-        details = service.evidence_health_details()
+        details = scope.details
         detail_filter = st.selectbox(
             "Health detail filter",
             ["Non-complete", "All statuses", "Complete", "Unavailable", "Incomplete", "Result-spec mismatch"],
@@ -250,7 +282,7 @@ def _overview(st, service, pd) -> None:
             width="stretch",
         )
         with st.expander("Chronological local health history", expanded=False):
-            history = service.evidence_health_history()
+            history = scope.history
             st.caption("Read-only retained batch coverage in oldest-to-newest creation order. It does not establish market-data coverage, strategy performance or evidence change causes.")
             if not history:
                 st.info("No retained local experiment batches are available for health-history inspection.")
