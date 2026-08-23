@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+import unittest
+
+from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
+from algo_manus.application.leaderboard import LeaderboardSort
+
+
+class FixtureWorkbenchTests(unittest.TestCase):
+    def test_fixture_workbench_runs_selected_universe_through_experiment_service(self) -> None:
+        service = FixtureWorkbenchService()
+        selected = tuple(item.instrument_id for item in service.instruments()[:3])
+        batch = service.run_experiment(
+            selected_instrument_ids=selected,
+            fast_window=3,
+            slow_window=6,
+            initial_cash=100_000,
+            quantity=100,
+            commission_bps=10,
+            slippage_bps=5,
+        )
+        rows = service.leaderboard(batch, LeaderboardSort.NET_PNL)
+
+        self.assertIn("not broker", FIXTURE_MODE_LABEL)
+        self.assertEqual(len(batch.results), 3)
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(item.backtest.spec.strategy_id == "sma_crossover" for item in batch.results))
+
+    def test_fixture_input_rejects_invalid_sma_windows(self) -> None:
+        service = FixtureWorkbenchService()
+        with self.assertRaisesRegex(ValueError, "fast window"):
+            service.run_experiment(
+                selected_instrument_ids=(service.instruments()[0].instrument_id,),
+                fast_window=6,
+                slow_window=6,
+                initial_cash=100_000,
+                quantity=100,
+                commission_bps=10,
+                slippage_bps=5,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
