@@ -63,11 +63,14 @@ class PaperOperationAuditTimelineReadService:
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
         instrument_id_filter: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> tuple[LocalPaperOperationAuditRow, ...]:
         if limit <= 0:
             raise ValueError("limit must be positive")
         integrity_scope = self._integrity_scope(integrity_filter)
         event_type_scope = self._event_type_scope(event_type_filter)
+        time_window = self._time_window(start_time, end_time)
         states: dict[str, PaperOrderStatus] = {}
         rows: list[LocalPaperOperationAuditRow] = []
         for event in self._events(limit=limit, order_id=order_id):
@@ -110,6 +113,7 @@ class PaperOperationAuditTimelineReadService:
             if self._matches_integrity_scope(row, integrity_scope)
             and self._matches_event_type_scope(row, event_type_scope)
             and self._matches_instrument_scope(row, instrument_scope)
+            and self._matches_time_window(row, time_window)
         )
 
     def integrity(
@@ -119,6 +123,8 @@ class PaperOperationAuditTimelineReadService:
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
         instrument_id_filter: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> LocalPaperOperationAuditIntegritySummary:
         rows = self.rows(
             limit=limit,
@@ -126,6 +132,8 @@ class PaperOperationAuditTimelineReadService:
             integrity_filter=integrity_filter,
             event_type_filter=event_type_filter,
             instrument_id_filter=instrument_id_filter,
+            start_time=start_time,
+            end_time=end_time,
         )
         return LocalPaperOperationAuditIntegritySummary(
             total_events=len(rows),
@@ -196,6 +204,28 @@ class PaperOperationAuditTimelineReadService:
     @staticmethod
     def _matches_instrument_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
         return scope == "ALL" or row.instrument_id == scope
+
+    @staticmethod
+    def _time_window(
+        start_time: datetime | None, end_time: datetime | None
+    ) -> tuple[datetime | None, datetime | None]:
+        for label, bound in (("start_time", start_time), ("end_time", end_time)):
+            if bound is not None and (bound.tzinfo is None or bound.utcoffset() is None):
+                raise ValueError(f"{label} must be timezone-aware")
+        if start_time is not None and end_time is not None and start_time > end_time:
+            raise ValueError("start_time must not be after end_time")
+        return start_time, end_time
+
+    @staticmethod
+    def _matches_time_window(
+        row: LocalPaperOperationAuditRow,
+        window: tuple[datetime | None, datetime | None],
+    ) -> bool:
+        start_time, end_time = window
+        return (
+            (start_time is None or row.occurred_at >= start_time)
+            and (end_time is None or row.occurred_at <= end_time)
+        )
 
     @staticmethod
     def _payload(serialized: str) -> tuple[dict[str, object], bool]:

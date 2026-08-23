@@ -43,6 +43,10 @@ The workbench may display all retained local event types or one type: `RISK_DECI
 
 The workbench may display all retained local instruments or one retained canonical instrument ID. A blank or unknown instrument filter is rejected by the application read service. Instrument scope combines with retained-order, integrity and event-type scopes only to narrow displayed local rows and totals; it does not alter the local ledger, lifecycle, risk controls, promotion evidence, or any execution state.
 
+## Optional retained event-time window
+
+The workbench may display all retained local events or an inclusive UTC start/end window based on each event's retained occurrence time. Both application-service bounds must be timezone-aware, and a start bound after the end bound is rejected. The local UI labels its date and time controls as UTC and does not call the reader for an inverted window. Time-window scope combines with retained-order, integrity, event-type and instrument scopes only to narrow displayed local rows and totals; it does not alter the local ledger, lifecycle, risk controls, promotion evidence, or any execution state.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.

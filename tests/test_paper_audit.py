@@ -284,6 +284,31 @@ class PaperOperationAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown"):
             audit.rows(instrument_id_filter="FIXTURE:NSE:EQ:UNKNOWN")
 
+    def test_time_window_filter_scopes_rows_and_totals_after_restart(self) -> None:
+        submission = self._submit(order_id="paper-audit-time-window")
+        fill_time = self.now + timedelta(minutes=1)
+        self.service.fill(submission.order, fill_price=101, now=fill_time)
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        all_rows = restarted.rows()
+        opening_rows = restarted.rows(start_time=self.now, end_time=self.now)
+        fill_rows = restarted.rows(start_time=fill_time, end_time=fill_time)
+        fill_summary = restarted.integrity(start_time=fill_time, end_time=fill_time)
+
+        self.assertEqual(len(all_rows), 3)
+        self.assertEqual([row.event_type for row in opening_rows], ["RISK_DECISION", "ORDER_SUBMITTED"])
+        self.assertEqual([row.event_type for row in fill_rows], ["ORDER_FILLED"])
+        self.assertEqual(fill_summary.total_events, 1)
+        self.assertEqual(fill_summary.valid_events, 1)
+
+    def test_time_window_filter_rejects_inverted_or_timezone_naive_bounds(self) -> None:
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "start_time"):
+            audit.rows(start_time=self.now + timedelta(minutes=1), end_time=self.now)
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            audit.rows(start_time=self.now.replace(tzinfo=None))
+
 
 if __name__ == "__main__":
     unittest.main()

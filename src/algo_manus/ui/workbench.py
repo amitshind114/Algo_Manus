@@ -895,21 +895,66 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         if selected_instrument_id == "All retained local instruments"
                         else selected_instrument_id
                     )
+                    retained_start = min(item.occurred_at for item in all_audit_rows)
+                    retained_end = max(item.occurred_at for item in all_audit_rows)
+                    time_window_enabled = st.checkbox(
+                        "Limit retained local audit time window (UTC)",
+                        value=False,
+                        help="Changes only the displayed retained local audit rows and totals; it cannot alter the local ledger, paper operations or broker state.",
+                    )
+                    start_time: datetime | None = None
+                    end_time: datetime | None = None
+                    if time_window_enabled:
+                        start_column, end_column = st.columns(2)
+                        with start_column:
+                            start_date = st.date_input(
+                                "Audit start date (UTC)",
+                                value=retained_start.date(),
+                                min_value=retained_start.date(),
+                                max_value=retained_end.date(),
+                            )
+                            start_clock = st.time_input(
+                                "Audit start time (UTC)",
+                                value=retained_start.time().replace(tzinfo=None),
+                            )
+                        with end_column:
+                            end_date = st.date_input(
+                                "Audit end date (UTC)",
+                                value=retained_end.date(),
+                                min_value=retained_start.date(),
+                                max_value=retained_end.date(),
+                            )
+                            end_clock = st.time_input(
+                                "Audit end time (UTC)",
+                                value=retained_end.time().replace(tzinfo=None),
+                            )
+                        start_time = datetime.combine(start_date, start_clock, tzinfo=timezone.utc)
+                        end_time = datetime.combine(end_date, end_clock, tzinfo=timezone.utc)
                     selected_order_id = (
                         None if selected_audit_order_id == "All retained local orders" else selected_audit_order_id
                     )
-                    audit_rows = paper_audit.rows(
-                        order_id=selected_order_id,
-                        integrity_filter=integrity_filter,
-                        event_type_filter=event_type_filter,
-                        instrument_id_filter=instrument_id_filter,
-                    )
-                    integrity = paper_audit.integrity(
-                        order_id=selected_order_id,
-                        integrity_filter=integrity_filter,
-                        event_type_filter=event_type_filter,
-                        instrument_id_filter=instrument_id_filter,
-                    )
+                    invalid_time_window = start_time is not None and end_time is not None and start_time > end_time
+                    if invalid_time_window:
+                        st.warning("Audit start time must not be after audit end time.")
+                        audit_rows = ()
+                        integrity = None
+                    else:
+                        audit_rows = paper_audit.rows(
+                            order_id=selected_order_id,
+                            integrity_filter=integrity_filter,
+                            event_type_filter=event_type_filter,
+                            instrument_id_filter=instrument_id_filter,
+                            start_time=start_time,
+                            end_time=end_time,
+                        )
+                        integrity = paper_audit.integrity(
+                            order_id=selected_order_id,
+                            integrity_filter=integrity_filter,
+                            event_type_filter=event_type_filter,
+                            instrument_id_filter=instrument_id_filter,
+                            start_time=start_time,
+                            end_time=end_time,
+                        )
                     if selected_audit_order_id != "All retained local orders":
                         st.caption(f"Showing retained local audit rows for order `{selected_audit_order_id}` only.")
                     if selected_integrity_scope != "All retained events":
@@ -918,14 +963,23 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         st.caption(f"Showing `{selected_event_type_scope.lower()}` within the selected local audit scope.")
                     if selected_instrument_id != "All retained local instruments":
                         st.caption(f"Showing retained local audit rows for instrument `{selected_instrument_id}` only.")
-                    integrity_tiles = st.columns(4)
-                    integrity_tiles[0].metric("Retained events", integrity.total_events)
-                    integrity_tiles[1].metric("Valid interpretation", integrity.valid_events)
-                    integrity_tiles[2].metric("Malformed payload", integrity.malformed_payload_events)
-                    integrity_tiles[3].metric("Invalid lifecycle", integrity.invalid_lifecycle_events)
+                    if time_window_enabled and not invalid_time_window:
+                        st.caption(
+                            "Showing retained local audit rows inclusively from "
+                            f"`{start_time.isoformat()}` to `{end_time.isoformat()}`."
+                        )
+                    if integrity is not None:
+                        integrity_tiles = st.columns(4)
+                        integrity_tiles[0].metric("Retained events", integrity.total_events)
+                        integrity_tiles[1].metric("Valid interpretation", integrity.valid_events)
+                        integrity_tiles[2].metric("Malformed payload", integrity.malformed_payload_events)
+                        integrity_tiles[3].metric("Invalid lifecycle", integrity.invalid_lifecycle_events)
                     st.caption("Integrity is a read-only interpretation of retained local payload shape and lifecycle order. It does not repair, reconcile or confirm any broker or execution state.")
                     if not audit_rows:
-                        st.info("No retained local audit rows match the selected audit filters.")
+                        if invalid_time_window:
+                            st.info("Correct the local audit time window before inspecting retained audit rows.")
+                        else:
+                            st.info("No retained local audit rows match the selected audit filters.")
                     else:
                         st.dataframe(
                             pd.DataFrame(
