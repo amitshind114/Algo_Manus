@@ -249,11 +249,18 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
         tiles[1].metric("Return", f"{result.metrics.total_return_pct:.2f}%")
         tiles[2].metric("Max drawdown", f"{result.metrics.max_drawdown_pct:.2f}%")
         tiles[3].metric("Trades", result.metrics.trade_count)
-        try:
-            artifacts = service.experiment_artifacts(batch_id=batch.batch_id, instrument_id=security)
-        except LookupError:
-            st.warning("Detailed local equity and trade artifacts are unavailable for this saved batch. KPI summaries remain persisted; rerun this fixture experiment to inspect detail.")
+        integrity = service.experiment_artifact_integrity(
+            batch_id=batch.batch_id, instrument_id=security
+        )
+        if not integrity.is_complete:
+            st.warning(_artifact_status_message(integrity.status.value))
             artifacts = None
+        else:
+            try:
+                artifacts = service.experiment_artifacts(batch_id=batch.batch_id, instrument_id=security)
+            except (LookupError, ValueError):
+                st.warning("Detailed local artifacts changed while being read and are unavailable for this saved result. KPI summaries remain persisted; no fixture result was recalculated.")
+                artifacts = None
         if artifacts is not None:
             equity = pd.DataFrame(artifacts.equity_curve, columns=["Timestamp", "Equity"])
             if not equity.empty:
@@ -296,6 +303,13 @@ def _leaderboard(st, service, pd) -> None:
             for item in st.session_state.history
         ])
         st.dataframe(history, width="stretch", hide_index=True)
+        integrity_rows = _artifact_integrity_rows(service, st.session_state.history)
+        st.caption("Detailed-artifact integrity is local SQLite evidence only. It does not re-run a fixture backtest or validate broker data.")
+        filter_options = ["All", "complete", "unavailable", "incomplete", "result_spec_mismatch"]
+        selected_status = st.selectbox("Artifact completeness filter", filter_options, key="history_artifact_status")
+        if selected_status != "All":
+            integrity_rows = [row for row in integrity_rows if row["Status"] == selected_status]
+        st.dataframe(pd.DataFrame(integrity_rows), width="stretch", hide_index=True)
 
 
 def _strategies(st, pd) -> None:
@@ -331,12 +345,20 @@ def _reporting(st, service, pd) -> None:
     for item in batch.results:
         result = item.backtest
         rows.append({"Instrument": item.instrument_id.split(":")[-1], "Net P&L": result.metrics.net_pnl, "Return %": result.metrics.total_return_pct, "Max DD %": result.metrics.max_drawdown_pct, "Trades": result.metrics.trade_count})
+        integrity = service.experiment_artifact_integrity(
+            batch_id=batch.batch_id, instrument_id=item.instrument_id
+        )
+        if not integrity.is_complete:
+            unavailable_details.append(
+                f"{item.instrument_id.split(':')[-1]} ({integrity.status.value})"
+            )
+            continue
         try:
             artifacts = service.experiment_artifacts(
                 batch_id=batch.batch_id, instrument_id=item.instrument_id
             )
-        except LookupError:
-            unavailable_details.append(item.instrument_id.split(":")[-1])
+        except (LookupError, ValueError):
+            unavailable_details.append(f"{item.instrument_id.split(':')[-1]} (changed while read)")
             continue
         trades.extend({"Instrument": item.instrument_id.split(":")[-1], "Entry": trade.entry_time, "Exit": trade.exit_time, "Net P&L": trade.net_pnl, "Cost": trade.cost} for trade in artifacts.trades)
     frame = pd.DataFrame(rows)
@@ -351,7 +373,7 @@ def _reporting(st, service, pd) -> None:
         st.dataframe(frame, hide_index=True, width="stretch")
     with log:
         if unavailable_details:
-            st.warning("Detailed local trade artifacts are unavailable for " + ", ".join(unavailable_details) + ". KPI summaries are still stored; rerun those fixture results to inspect trades.")
+            st.warning("Detailed local trade artifacts are not complete for " + ", ".join(unavailable_details) + ". KPI summaries are still stored; no fixture result was recalculated.")
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
 
 
@@ -374,6 +396,35 @@ def _select_persisted_batch(st, *, key: str):
     st.session_state.active_batch = batch
     st.caption(f"Research manifest: {batch.research_manifest_id or 'missing — paper promotion blocked'}")
     return batch
+
+
+def _artifact_integrity_rows(service, batches) -> list[dict[str, object]]:
+    rows = []
+    for batch in batches:
+        for result in batch.results:
+            integrity = service.experiment_artifact_integrity(
+                batch_id=batch.batch_id, instrument_id=result.instrument_id
+            )
+            rows.append(
+                {
+                    "Batch": batch.batch_id,
+                    "Instrument": result.instrument_id.split(":")[-1],
+                    "Status": integrity.status.value,
+                    "Trades": f"{integrity.actual_trade_count}/{integrity.expected_trade_count if integrity.expected_trade_count is not None else '—'}",
+                    "Equity points": f"{integrity.actual_equity_point_count}/{integrity.expected_equity_point_count if integrity.expected_equity_point_count is not None else '—'}",
+                    "Result spec match": integrity.result_spec_id == integrity.artifact_result_spec_id,
+                }
+            )
+    return rows
+
+
+def _artifact_status_message(status: str) -> str:
+    messages = {
+        "unavailable": "Detailed local equity and trade artifacts are unavailable for this saved batch. KPI summaries remain persisted; no fixture result was recalculated.",
+        "incomplete": "Detailed local artifacts are incomplete for this saved batch. KPI summaries remain persisted; no fixture result was recalculated.",
+        "result_spec_mismatch": "Detailed local artifacts do not match the saved result specification. KPI summaries remain persisted; no fixture result was recalculated.",
+    }
+    return messages.get(status, "Detailed local artifacts cannot be used for this saved batch. KPI summaries remain persisted; no fixture result was recalculated.")
 
 
 def _paper(st, by_id, pd, service, control_service, ledger) -> None:

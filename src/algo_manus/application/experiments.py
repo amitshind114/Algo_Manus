@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from hashlib import sha256
 import json
 from typing import Mapping, Protocol
@@ -42,9 +43,39 @@ class ExperimentBatchRepository(Protocol):
         self, *, batch_id: str, instrument_id: str
     ) -> "ExperimentResultArtifacts | None": ...
 
+    def get_result_artifact_integrity(
+        self, *, batch_id: str, instrument_id: str
+    ) -> "ExperimentArtifactIntegrity": ...
+
 
 class ExperimentArtifactsUnavailableError(LookupError):
     """Raised when a persisted batch has no detailed result artifacts to inspect."""
+
+
+class ExperimentArtifactIntegrityStatus(str, Enum):
+    COMPLETE = "complete"
+    UNAVAILABLE = "unavailable"
+    INCOMPLETE = "incomplete"
+    RESULT_SPEC_MISMATCH = "result_spec_mismatch"
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentArtifactIntegrity:
+    """Read-only local artifact status compared against its stored experiment result."""
+
+    batch_id: str
+    instrument_id: str
+    status: ExperimentArtifactIntegrityStatus
+    result_spec_id: str | None
+    artifact_result_spec_id: str | None
+    expected_trade_count: int | None
+    actual_trade_count: int
+    expected_equity_point_count: int | None
+    actual_equity_point_count: int
+
+    @property
+    def is_complete(self) -> bool:
+        return self.status is ExperimentArtifactIntegrityStatus.COMPLETE
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +102,13 @@ class ExperimentArtifactReadService:
         self._repository = repository
 
     def get(self, *, batch_id: str, instrument_id: str) -> ExperimentResultArtifacts:
+        integrity = self.integrity(batch_id=batch_id, instrument_id=instrument_id)
+        if integrity.status is ExperimentArtifactIntegrityStatus.UNAVAILABLE:
+            raise ExperimentArtifactsUnavailableError(
+                f"persisted detailed artifacts are unavailable for {batch_id}/{instrument_id}"
+            )
+        if not integrity.is_complete:
+            raise ValueError(f"persisted artifact integrity status is {integrity.status.value}")
         artifacts = self._repository.get_result_artifacts(
             batch_id=batch_id, instrument_id=instrument_id
         )
@@ -79,6 +117,11 @@ class ExperimentArtifactReadService:
                 f"persisted detailed artifacts are unavailable for {batch_id}/{instrument_id}"
             )
         return artifacts
+
+    def integrity(self, *, batch_id: str, instrument_id: str) -> ExperimentArtifactIntegrity:
+        return self._repository.get_result_artifact_integrity(
+            batch_id=batch_id, instrument_id=instrument_id
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,7 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
-from algo_manus.application.experiments import ExperimentResultArtifacts
+from algo_manus.application.experiments import (
+    ExperimentArtifactIntegrity,
+    ExperimentArtifactIntegrityStatus,
+    ExperimentResultArtifacts,
+)
 from algo_manus.domain.backtest import BacktestMetrics, BacktestResult, BacktestSpec, BacktestTrade
 from algo_manus.domain.experiment import (
     ExperimentBatch,
@@ -358,6 +362,13 @@ class SqliteExperimentBatchRepository:
     def get_result_artifacts(
         self, *, batch_id: str, instrument_id: str
     ) -> ExperimentResultArtifacts | None:
+        integrity = self.get_result_artifact_integrity(
+            batch_id=batch_id, instrument_id=instrument_id
+        )
+        if integrity.status is ExperimentArtifactIntegrityStatus.UNAVAILABLE:
+            return None
+        if not integrity.is_complete:
+            raise ValueError(f"persisted artifact integrity status is {integrity.status.value}")
         with self._connection() as connection:
             artifact = connection.execute(
                 """
@@ -386,8 +397,6 @@ class SqliteExperimentBatchRepository:
                 """,
                 (batch_id, instrument_id),
             ).fetchall()
-        if len(trade_rows) != artifact["trade_count"] or len(equity_rows) != artifact["equity_point_count"]:
-            raise ValueError("persisted experiment artifacts are incomplete")
         return ExperimentResultArtifacts(
             batch_id=batch_id,
             instrument_id=instrument_id,
@@ -408,6 +417,83 @@ class SqliteExperimentBatchRepository:
                 (datetime.fromisoformat(row["timestamp"]), row["equity"])
                 for row in equity_rows
             ),
+        )
+
+    def get_result_artifact_integrity(
+        self, *, batch_id: str, instrument_id: str
+    ) -> ExperimentArtifactIntegrity:
+        with self._connection() as connection:
+            result = connection.execute(
+                """
+                SELECT spec_id FROM experiment_results
+                WHERE batch_id = ? AND instrument_id = ?
+                """,
+                (batch_id, instrument_id),
+            ).fetchone()
+            if result is None:
+                return ExperimentArtifactIntegrity(
+                    batch_id=batch_id,
+                    instrument_id=instrument_id,
+                    status=ExperimentArtifactIntegrityStatus.UNAVAILABLE,
+                    result_spec_id=None,
+                    artifact_result_spec_id=None,
+                    expected_trade_count=None,
+                    actual_trade_count=0,
+                    expected_equity_point_count=None,
+                    actual_equity_point_count=0,
+                )
+            artifact = connection.execute(
+                """
+                SELECT result_spec_id, trade_count, equity_point_count
+                FROM experiment_result_artifacts
+                WHERE batch_id = ? AND instrument_id = ?
+                """,
+                (batch_id, instrument_id),
+            ).fetchone()
+            if artifact is None:
+                return ExperimentArtifactIntegrity(
+                    batch_id=batch_id,
+                    instrument_id=instrument_id,
+                    status=ExperimentArtifactIntegrityStatus.UNAVAILABLE,
+                    result_spec_id=result["spec_id"],
+                    artifact_result_spec_id=None,
+                    expected_trade_count=None,
+                    actual_trade_count=0,
+                    expected_equity_point_count=None,
+                    actual_equity_point_count=0,
+                )
+            actual_trade_count = connection.execute(
+                """
+                SELECT COUNT(*) FROM experiment_trades
+                WHERE batch_id = ? AND instrument_id = ?
+                """,
+                (batch_id, instrument_id),
+            ).fetchone()[0]
+            actual_equity_point_count = connection.execute(
+                """
+                SELECT COUNT(*) FROM experiment_equity_points
+                WHERE batch_id = ? AND instrument_id = ?
+                """,
+                (batch_id, instrument_id),
+            ).fetchone()[0]
+        status = ExperimentArtifactIntegrityStatus.COMPLETE
+        if artifact["result_spec_id"] != result["spec_id"]:
+            status = ExperimentArtifactIntegrityStatus.RESULT_SPEC_MISMATCH
+        elif (
+            actual_trade_count != artifact["trade_count"]
+            or actual_equity_point_count != artifact["equity_point_count"]
+        ):
+            status = ExperimentArtifactIntegrityStatus.INCOMPLETE
+        return ExperimentArtifactIntegrity(
+            batch_id=batch_id,
+            instrument_id=instrument_id,
+            status=status,
+            result_spec_id=result["spec_id"],
+            artifact_result_spec_id=artifact["result_spec_id"],
+            expected_trade_count=artifact["trade_count"],
+            actual_trade_count=actual_trade_count,
+            expected_equity_point_count=artifact["equity_point_count"],
+            actual_equity_point_count=actual_equity_point_count,
         )
 
     def _validate_artifact_bounds(self, batch: ExperimentBatch) -> None:

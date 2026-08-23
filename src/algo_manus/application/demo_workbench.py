@@ -18,6 +18,8 @@ from algo_manus.application.experiment_evidence import ExperimentEvidenceReadSer
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
+    ExperimentArtifactIntegrity,
+    ExperimentArtifactIntegrityStatus,
     ExperimentBatchService,
     ExperimentResultArtifacts,
 )
@@ -76,6 +78,39 @@ class _MemoryExperimentRepository:
             result_spec_id=result.spec.spec_id,
             trades=result.trades,
             equity_curve=result.equity_curve,
+        )
+
+    def get_result_artifact_integrity(
+        self, *, batch_id: str, instrument_id: str
+    ) -> ExperimentArtifactIntegrity:
+        batch = self._batches.get(batch_id)
+        result = (
+            next((item.backtest for item in batch.results if item.instrument_id == instrument_id), None)
+            if batch is not None
+            else None
+        )
+        if result is None:
+            return ExperimentArtifactIntegrity(
+                batch_id=batch_id,
+                instrument_id=instrument_id,
+                status=ExperimentArtifactIntegrityStatus.UNAVAILABLE,
+                result_spec_id=None,
+                artifact_result_spec_id=None,
+                expected_trade_count=None,
+                actual_trade_count=0,
+                expected_equity_point_count=None,
+                actual_equity_point_count=0,
+            )
+        return ExperimentArtifactIntegrity(
+            batch_id=batch_id,
+            instrument_id=instrument_id,
+            status=ExperimentArtifactIntegrityStatus.COMPLETE,
+            result_spec_id=result.spec.spec_id,
+            artifact_result_spec_id=result.spec.spec_id,
+            expected_trade_count=len(result.trades),
+            actual_trade_count=len(result.trades),
+            expected_equity_point_count=len(result.equity_curve),
+            actual_equity_point_count=len(result.equity_curve),
         )
 
 
@@ -189,6 +224,16 @@ class FixtureWorkbenchService:
         """Read stored fixture detail; this never reruns a strategy or loads market data."""
 
         return ExperimentArtifactReadService(self._batches).get(
+            batch_id=batch_id,
+            instrument_id=instrument_id,
+        )
+
+    def experiment_artifact_integrity(
+        self, *, batch_id: str, instrument_id: str
+    ) -> ExperimentArtifactIntegrity:
+        """Return a local stored-artifact status without rerunning fixture research."""
+
+        return ExperimentArtifactReadService(self._batches).integrity(
             batch_id=batch_id,
             instrument_id=instrument_id,
         )
