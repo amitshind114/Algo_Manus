@@ -864,21 +864,45 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         "Valid interpretation only": "VALID",
                         "Integrity issues only": "ISSUES",
                     }[selected_integrity_scope]
+                    selected_event_type_scope = st.selectbox(
+                        "Retained local event type",
+                        options=[
+                            "All retained event types",
+                            "Risk decisions",
+                            "Submissions",
+                            "Fills",
+                            "Cancellations",
+                            "Rejections",
+                        ],
+                        help="Changes only the displayed retained local audit events; it cannot alter lifecycle, paper-operation or broker state.",
+                    )
+                    event_type_filter = {
+                        "All retained event types": "ALL",
+                        "Risk decisions": "RISK_DECISION",
+                        "Submissions": "ORDER_SUBMITTED",
+                        "Fills": "ORDER_FILLED",
+                        "Cancellations": "ORDER_CANCELLED",
+                        "Rejections": "ORDER_REJECTED",
+                    }[selected_event_type_scope]
                     selected_order_id = (
                         None if selected_audit_order_id == "All retained local orders" else selected_audit_order_id
                     )
                     audit_rows = paper_audit.rows(
                         order_id=selected_order_id,
                         integrity_filter=integrity_filter,
+                        event_type_filter=event_type_filter,
                     )
                     integrity = paper_audit.integrity(
                         order_id=selected_order_id,
                         integrity_filter=integrity_filter,
+                        event_type_filter=event_type_filter,
                     )
                     if selected_audit_order_id != "All retained local orders":
                         st.caption(f"Showing retained local audit rows for order `{selected_audit_order_id}` only.")
                     if selected_integrity_scope != "All retained events":
                         st.caption(f"Showing `{selected_integrity_scope.lower()}` within the selected local audit scope.")
+                    if selected_event_type_scope != "All retained event types":
+                        st.caption(f"Showing `{selected_event_type_scope.lower()}` within the selected local audit scope.")
                     integrity_tiles = st.columns(4)
                     integrity_tiles[0].metric("Retained events", integrity.total_events)
                     integrity_tiles[1].metric("Valid interpretation", integrity.valid_events)
@@ -886,7 +910,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                     integrity_tiles[3].metric("Invalid lifecycle", integrity.invalid_lifecycle_events)
                     st.caption("Integrity is a read-only interpretation of retained local payload shape and lifecycle order. It does not repair, reconcile or confirm any broker or execution state.")
                     if not audit_rows:
-                        st.info("No retained local audit rows match the selected integrity scope.")
+                        st.info("No retained local audit rows match the selected audit filters.")
                     else:
                         st.dataframe(
                             pd.DataFrame(

@@ -7,7 +7,7 @@ from datetime import datetime
 import json
 from typing import Protocol
 
-from algo_manus.domain.paper import PaperEvent, PaperOrderLifecycle, PaperOrderStatus
+from algo_manus.domain.paper import PaperEvent, PaperEventType, PaperOrderLifecycle, PaperOrderStatus
 
 
 class PaperAuditEventReadPort(Protocol):
@@ -61,10 +61,12 @@ class PaperOperationAuditTimelineReadService:
         limit: int = 1_000,
         order_id: str | None = None,
         integrity_filter: str | None = None,
+        event_type_filter: str | None = None,
     ) -> tuple[LocalPaperOperationAuditRow, ...]:
         if limit <= 0:
             raise ValueError("limit must be positive")
         integrity_scope = self._integrity_scope(integrity_filter)
+        event_type_scope = self._event_type_scope(event_type_filter)
         states: dict[str, PaperOrderStatus] = {}
         rows: list[LocalPaperOperationAuditRow] = []
         for event in self._events(limit=limit, order_id=order_id):
@@ -100,15 +102,26 @@ class PaperOperationAuditTimelineReadService:
                     ),
                 )
             )
-        return tuple(row for row in rows if self._matches_integrity_scope(row, integrity_scope))
+        return tuple(
+            row
+            for row in rows
+            if self._matches_integrity_scope(row, integrity_scope)
+            and self._matches_event_type_scope(row, event_type_scope)
+        )
 
     def integrity(
         self,
         limit: int = 1_000,
         order_id: str | None = None,
         integrity_filter: str | None = None,
+        event_type_filter: str | None = None,
     ) -> LocalPaperOperationAuditIntegritySummary:
-        rows = self.rows(limit=limit, order_id=order_id, integrity_filter=integrity_filter)
+        rows = self.rows(
+            limit=limit,
+            order_id=order_id,
+            integrity_filter=integrity_filter,
+            event_type_filter=event_type_filter,
+        )
         return LocalPaperOperationAuditIntegritySummary(
             total_events=len(rows),
             valid_events=sum(item.integrity_status == "VALID" for item in rows),
@@ -144,6 +157,21 @@ class PaperOperationAuditTimelineReadService:
         if scope == "VALID":
             return row.integrity_status == "VALID"
         return row.integrity_status != "VALID"
+
+    @staticmethod
+    def _event_type_scope(event_type_filter: str | None) -> str:
+        if event_type_filter is None:
+            return "ALL"
+        normalized = event_type_filter.strip().upper()
+        if not normalized:
+            raise ValueError("event_type_filter must not be blank")
+        if normalized not in {"ALL", *(event_type.value for event_type in PaperEventType)}:
+            raise ValueError("unknown event_type_filter")
+        return normalized
+
+    @staticmethod
+    def _matches_event_type_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
+        return scope == "ALL" or row.event_type == scope
 
     @staticmethod
     def _payload(serialized: str) -> tuple[dict[str, object], bool]:

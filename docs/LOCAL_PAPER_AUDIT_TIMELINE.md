@@ -35,6 +35,10 @@ The workbench displays total retained events, valid interpretations, malformed p
 
 The workbench may display all retained events, only `VALID` local interpretations, or only local integrity issues. The issue-only scope includes every non-`VALID` status, including events with both a malformed payload and invalid lifecycle. A blank or unknown integrity filter is rejected by the application read service. Integrity scope changes only the displayed retained local rows and totals; it does not repair, alter, export, synchronize or confirm events.
 
+## Optional retained event-type scope
+
+The workbench may display all retained local event types or one type: `RISK_DECISION`, `ORDER_SUBMITTED`, `ORDER_FILLED`, `ORDER_CANCELLED`, or `ORDER_REJECTED`. A blank or unknown event-type filter is rejected by the application read service. Event-type scope combines with retained-order and integrity scopes only to narrow displayed local rows and totals; it does not alter the local ledger, lifecycle, risk controls, promotion evidence, or any execution state.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.

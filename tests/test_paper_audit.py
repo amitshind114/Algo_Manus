@@ -231,6 +231,28 @@ class PaperOperationAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown"):
             audit.rows(integrity_filter="incomplete")
 
+    def test_event_type_filter_scopes_rows_and_totals_after_restart(self) -> None:
+        submission = self._submit(order_id="paper-audit-event-filter")
+        self.service.fill(submission.order, fill_price=101, now=self.now + timedelta(minutes=1))
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        all_rows = restarted.rows(event_type_filter="ALL")
+        fill_rows = restarted.rows(event_type_filter="ORDER_FILLED")
+        fill_summary = restarted.integrity(event_type_filter="ORDER_FILLED")
+
+        self.assertEqual([row.event_type for row in all_rows], ["RISK_DECISION", "ORDER_SUBMITTED", "ORDER_FILLED"])
+        self.assertEqual([row.event_type for row in fill_rows], ["ORDER_FILLED"])
+        self.assertEqual(fill_summary.total_events, 1)
+        self.assertEqual(fill_summary.valid_events, 1)
+
+    def test_event_type_filter_rejects_blank_or_unknown_values(self) -> None:
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "event_type_filter"):
+            audit.rows(event_type_filter=" ")
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            audit.rows(event_type_filter="ORDER_AMENDED")
+
 
 if __name__ == "__main__":
     unittest.main()
