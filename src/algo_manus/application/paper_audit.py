@@ -67,6 +67,12 @@ class LocalPaperOperationAuditScopePreset:
     integrity_filter: str
 
 
+@dataclass(frozen=True, slots=True)
+class LocalPaperOperationAuditRowDetail:
+    row: LocalPaperOperationAuditRow
+    retained_payload: str
+
+
 LOCAL_PAPER_OPERATION_AUDIT_SCOPE_PRESETS = (
     LocalPaperOperationAuditScopePreset("ALL", "All retained events", "ALL"),
     LocalPaperOperationAuditScopePreset("VALID", "Valid interpretations", "VALID"),
@@ -186,6 +192,19 @@ class PaperOperationAuditTimelineReadService:
             start_time=time_window[0],
             end_time=time_window[1],
         )
+
+    def row_detail(self, event_id: str, limit: int = 1_000) -> LocalPaperOperationAuditRowDetail:
+        retained_event_id = event_id.strip()
+        if not retained_event_id:
+            raise ValueError("event_id must not be blank")
+        rows_by_id = {row.event_id: row for row in self.rows(limit=limit)}
+        for event in self._ledger.events(limit):
+            if event.event_id == retained_event_id:
+                return LocalPaperOperationAuditRowDetail(
+                    row=rows_by_id[event.event_id],
+                    retained_payload=event.payload,
+                )
+        raise ValueError("unknown retained event_id")
 
     @staticmethod
     def scope_preset(preset_id: str) -> LocalPaperOperationAuditScopePreset:

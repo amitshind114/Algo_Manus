@@ -1068,6 +1068,51 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             hide_index=True,
                             width="stretch",
                         )
+                        with st.expander("Read-only retained audit-row detail", expanded=False):
+                            st.caption(
+                                "Local retained payload and interpreted fields only. This view cannot amend, reconcile, export, synchronize or change any paper operation."
+                            )
+                            selected_audit_event_id = st.selectbox(
+                                "Retained local audit event",
+                                options=[item.event_id for item in audit_rows],
+                                format_func=lambda event_id: next(
+                                    f"{item.occurred_at.isoformat()} · {item.event_type} · {event_id}"
+                                    for item in audit_rows
+                                    if item.event_id == event_id
+                                ),
+                                help="Changes only the displayed retained local audit row detail.",
+                            )
+                            detail = paper_audit.row_detail(selected_audit_event_id)
+                            detail_row = detail.row
+                            st.dataframe(
+                                pd.DataFrame(
+                                    [
+                                        {"Field": "Event ID", "Retained or interpreted value": detail_row.event_id},
+                                        {"Field": "Recorded time", "Retained or interpreted value": detail_row.occurred_at.isoformat()},
+                                        {"Field": "Event type", "Retained or interpreted value": detail_row.event_type},
+                                        {"Field": "Derived lifecycle state", "Retained or interpreted value": detail_row.lifecycle_state},
+                                        {"Field": "Audit integrity", "Retained or interpreted value": detail_row.integrity_status},
+                                        {"Field": "Payload valid", "Retained or interpreted value": detail_row.payload_valid},
+                                        {"Field": "Order", "Retained or interpreted value": detail_row.order_id},
+                                        {"Field": "Instrument", "Retained or interpreted value": detail_row.instrument_id},
+                                        {"Field": "Side", "Retained or interpreted value": detail_row.side or "—"},
+                                        {"Field": "Quantity", "Retained or interpreted value": detail_row.quantity if detail_row.quantity is not None else "—"},
+                                        {"Field": "Reference price", "Retained or interpreted value": detail_row.reference_price if detail_row.reference_price is not None else "—"},
+                                        {"Field": "Fill price", "Retained or interpreted value": detail_row.fill_price if detail_row.fill_price is not None else "—"},
+                                        {"Field": "Decision code", "Retained or interpreted value": detail_row.decision_code or "—"},
+                                        {"Field": "Central gate", "Retained or interpreted value": detail_row.central_decision_type or "—"},
+                                        {"Field": "Research batch", "Retained or interpreted value": detail_row.research_batch_id or "—"},
+                                        {"Field": "Research manifest", "Retained or interpreted value": detail_row.research_manifest_id or "—"},
+                                    ]
+                                ),
+                                hide_index=True,
+                                width="stretch",
+                            )
+                            st.caption("Retained local payload")
+                            st.code(
+                                detail.retained_payload,
+                                language="json" if detail_row.payload_valid else None,
+                            )
             positions = pd.DataFrame(
                 [
                     {"Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol if item.instrument_id in by_id else item.instrument_id,

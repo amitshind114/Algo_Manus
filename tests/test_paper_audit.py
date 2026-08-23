@@ -384,6 +384,40 @@ class PaperOperationAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown"):
             audit.scope_preset("RECONCILED")
 
+    def test_row_detail_resolves_retained_and_interpreted_fields_after_restart(self) -> None:
+        submission = self._submit(order_id="paper-audit-row-detail")
+        fill_time = self.now + timedelta(minutes=1)
+        self.service.fill(submission.order, fill_price=101, now=fill_time)
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        fill_row = next(row for row in restarted.rows() if row.event_type == "ORDER_FILLED")
+        detail = restarted.row_detail(fill_row.event_id)
+
+        self.assertEqual(detail.row.event_id, fill_row.event_id)
+        self.assertEqual(detail.row.lifecycle_state, "FILLED")
+        self.assertTrue(detail.row.payload_valid)
+        self.assertIn('"fill_price":101', detail.retained_payload)
+
+    def test_row_detail_keeps_malformed_payload_visible_and_rejects_unknown_ids(self) -> None:
+        malformed_event = PaperEvent(
+            event_id="EVT-audit-row-detail-malformed",
+            event_type=PaperEventType.RISK_DECISION,
+            occurred_at=self.now,
+            order_id="paper-audit-row-detail-malformed",
+            instrument_id="FIXTURE:NSE:EQ:ALPHA",
+            payload="not-json",
+        )
+        self.ledger.append(malformed_event)
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        detail = audit.row_detail(malformed_event.event_id)
+        self.assertFalse(detail.row.payload_valid)
+        self.assertEqual(detail.retained_payload, "not-json")
+        with self.assertRaisesRegex(ValueError, "event_id"):
+            audit.row_detail(" ")
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            audit.row_detail("EVT-audit-row-detail-unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

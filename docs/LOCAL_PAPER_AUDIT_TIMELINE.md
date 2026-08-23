@@ -55,6 +55,10 @@ The application read service can return an immutable local summary of the active
 
 The application read service exposes immutable local presets for `ALL`, `VALID`, and `ISSUES` integrity interpretation scopes. The workbench's preset selector applies only that integrity dimension; retained order, event-type, instrument and UTC time-window controls remain independent. Selecting **Manual integrity filter** instead exposes the existing manual integrity selector. Unknown preset identities are rejected, and a preset never writes, repairs, reconciles, exports, synchronizes or confirms retained events.
 
+## Retained audit-row detail
+
+The application read service can resolve one retained local event by its event ID into an immutable pair of the interpreted audit row and its original serialized local payload. The workbench offers this detail selector only when the currently displayed local scope contains rows. Blank or unknown event IDs are rejected. A malformed payload remains visible as retained text and is marked through the existing payload-valid and integrity interpretation fields; row detail never repairs, changes, exports, reconciles, synchronizes or confirms an event.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.
