@@ -47,6 +47,10 @@ The workbench may display all retained local instruments or one retained canonic
 
 The workbench may display all retained local events or an inclusive UTC start/end window based on each event's retained occurrence time. Both application-service bounds must be timezone-aware, and a start bound after the end bound is rejected. The local UI labels its date and time controls as UTC and does not call the reader for an inverted window. Time-window scope combines with retained-order, integrity, event-type and instrument scopes only to narrow displayed local rows and totals; it does not alter the local ledger, lifecycle, risk controls, promotion evidence, or any execution state.
 
+## Active-filter summary
+
+The application read service can return an immutable local summary of the active retained order, integrity, event-type, instrument and UTC time-window scopes. `ALL` denotes an unrestricted dimension, while UTC start/end values are retained exactly as the validated inclusive bounds. The workbench displays this summary only for a valid scope set. It is not an export, broker request, execution instruction, reconciliation result, or repair record.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.

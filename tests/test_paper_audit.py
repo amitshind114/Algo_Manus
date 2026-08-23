@@ -309,6 +309,41 @@ class PaperOperationAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "timezone-aware"):
             audit.rows(start_time=self.now.replace(tzinfo=None))
 
+    def test_filter_summary_reports_all_and_fully_scoped_local_filters_after_restart(self) -> None:
+        submission = self._submit(order_id="paper-audit-filter-summary")
+        fill_time = self.now + timedelta(minutes=1)
+        self.service.fill(submission.order, fill_price=101, now=fill_time)
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        all_summary = restarted.filter_summary()
+        scoped_summary = restarted.filter_summary(
+            order_id="paper-audit-filter-summary",
+            integrity_filter="VALID",
+            event_type_filter="ORDER_FILLED",
+            instrument_id_filter="FIXTURE:NSE:EQ:ALPHA",
+            start_time=fill_time,
+            end_time=fill_time,
+        )
+
+        self.assertEqual(all_summary.order_scope, "ALL")
+        self.assertEqual(all_summary.integrity_scope, "ALL")
+        self.assertEqual(all_summary.event_type_scope, "ALL")
+        self.assertEqual(all_summary.instrument_scope, "ALL")
+        self.assertIsNone(all_summary.start_time)
+        self.assertIsNone(all_summary.end_time)
+        self.assertEqual(scoped_summary.order_scope, "paper-audit-filter-summary")
+        self.assertEqual(scoped_summary.integrity_scope, "VALID")
+        self.assertEqual(scoped_summary.event_type_scope, "ORDER_FILLED")
+        self.assertEqual(scoped_summary.instrument_scope, "FIXTURE:NSE:EQ:ALPHA")
+        self.assertEqual(scoped_summary.start_time, fill_time)
+        self.assertEqual(scoped_summary.end_time, fill_time)
+
+    def test_filter_summary_rejects_invalid_time_window_without_repair(self) -> None:
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "start_time"):
+            audit.filter_summary(start_time=self.now + timedelta(minutes=1), end_time=self.now)
+
 
 if __name__ == "__main__":
     unittest.main()

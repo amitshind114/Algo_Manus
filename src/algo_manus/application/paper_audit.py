@@ -50,6 +50,16 @@ class LocalPaperOperationAuditIntegritySummary:
     invalid_lifecycle_events: int
 
 
+@dataclass(frozen=True, slots=True)
+class LocalPaperOperationAuditFilterSummary:
+    order_scope: str
+    integrity_scope: str
+    event_type_scope: str
+    instrument_scope: str
+    start_time: datetime | None
+    end_time: datetime | None
+
+
 class PaperOperationAuditTimelineReadService:
     """Interpret retained local ledger events only; it cannot submit, cancel or modify orders."""
 
@@ -142,6 +152,27 @@ class PaperOperationAuditTimelineReadService:
             invalid_lifecycle_events=sum(item.lifecycle_state == "UNPROJECTABLE" for item in rows),
         )
 
+    def filter_summary(
+        self,
+        limit: int = 1_000,
+        order_id: str | None = None,
+        integrity_filter: str | None = None,
+        event_type_filter: str | None = None,
+        instrument_id_filter: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> LocalPaperOperationAuditFilterSummary:
+        raw_rows = self.rows(limit=limit, order_id=order_id)
+        time_window = self._time_window(start_time, end_time)
+        return LocalPaperOperationAuditFilterSummary(
+            order_scope=self._order_scope(order_id),
+            integrity_scope=self._integrity_scope(integrity_filter),
+            event_type_scope=self._event_type_scope(event_type_filter),
+            instrument_scope=self._instrument_scope(instrument_id_filter, list(raw_rows)),
+            start_time=time_window[0],
+            end_time=time_window[1],
+        )
+
     def _events(self, *, limit: int, order_id: str | None) -> tuple[PaperEvent, ...]:
         if order_id is None:
             return self._ledger.events(limit)
@@ -151,6 +182,12 @@ class PaperOperationAuditTimelineReadService:
         if retained_order_id not in self._ledger.order_ids():
             raise ValueError("unknown retained order_id")
         return self._ledger.events_for(retained_order_id)[:limit]
+
+    @staticmethod
+    def _order_scope(order_id: str | None) -> str:
+        if order_id is None:
+            return "ALL"
+        return order_id.strip()
 
     @staticmethod
     def _integrity_scope(integrity_filter: str | None) -> str:

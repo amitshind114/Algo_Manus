@@ -938,6 +938,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         st.warning("Audit start time must not be after audit end time.")
                         audit_rows = ()
                         integrity = None
+                        filter_summary = None
                     else:
                         audit_rows = paper_audit.rows(
                             order_id=selected_order_id,
@@ -954,6 +955,43 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             instrument_id_filter=instrument_id_filter,
                             start_time=start_time,
                             end_time=end_time,
+                        )
+                        filter_summary = paper_audit.filter_summary(
+                            order_id=selected_order_id,
+                            integrity_filter=integrity_filter,
+                            event_type_filter=event_type_filter,
+                            instrument_id_filter=instrument_id_filter,
+                            start_time=start_time,
+                            end_time=end_time,
+                        )
+                    if filter_summary is not None:
+                        st.markdown("#### Active read-only audit filters")
+                        st.dataframe(
+                            pd.DataFrame(
+                                [
+                                    {"Filter": "Retained order", "Active local scope": filter_summary.order_scope},
+                                    {"Filter": "Integrity", "Active local scope": filter_summary.integrity_scope},
+                                    {"Filter": "Event type", "Active local scope": filter_summary.event_type_scope},
+                                    {"Filter": "Retained instrument", "Active local scope": filter_summary.instrument_scope},
+                                    {
+                                        "Filter": "UTC start (inclusive)",
+                                        "Active local scope": filter_summary.start_time.isoformat()
+                                        if filter_summary.start_time is not None
+                                        else "ALL",
+                                    },
+                                    {
+                                        "Filter": "UTC end (inclusive)",
+                                        "Active local scope": filter_summary.end_time.isoformat()
+                                        if filter_summary.end_time is not None
+                                        else "ALL",
+                                    },
+                                ]
+                            ),
+                            hide_index=True,
+                            width="stretch",
+                        )
+                        st.caption(
+                            "This is a local read-only summary of displayed audit filters. It cannot repair, reconcile, export, synchronize or change paper operations."
                         )
                     if selected_audit_order_id != "All retained local orders":
                         st.caption(f"Showing retained local audit rows for order `{selected_audit_order_id}` only.")
