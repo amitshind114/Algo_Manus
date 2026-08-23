@@ -24,6 +24,7 @@ from algo_manus.domain.risk import (
 )
 from algo_manus.domain.instruments import InstrumentStatus
 from algo_manus.domain.research import DatasetValidationOutcome
+from algo_manus.domain.risk_controls import RiskControlSnapshot
 from algo_manus.domain.risk_engine import (
     CentralRiskEngine,
     CentralRiskPolicy,
@@ -63,14 +64,19 @@ class PaperExecutionService:
         kill_switch_active: bool,
         instrument_status: InstrumentStatus | None,
         validation_outcome: DatasetValidationOutcome | None,
+        control_snapshot: RiskControlSnapshot | None = None,
         now: datetime | None = None,
     ) -> PaperSubmission:
         occurred_at = now or datetime.now(timezone.utc)
+        active_policy = control_snapshot.policy if control_snapshot is not None else self._central_policy
+        active_kill_switch = (
+            control_snapshot.kill_switch_active if control_snapshot is not None else kill_switch_active
+        )
         central_decision = self._central_engine.evaluate(
             intent=intent,
-            policy=self._central_policy,
+            policy=active_policy,
             context=RiskEvaluationContext(
-                kill_switch_active=kill_switch_active,
+                kill_switch_active=active_kill_switch,
                 seen_order_ids=self._ledger.order_ids(),
                 open_position_count=sum(1 for quantity in portfolio.positions.values() if quantity != 0),
                 instrument_status=instrument_status,
@@ -83,7 +89,7 @@ class PaperExecutionService:
                 portfolio=portfolio,
                 marks=marks,
                 limits=limits,
-                kill_switch_active=kill_switch_active,
+                kill_switch_active=active_kill_switch,
             )
             if central_decision.decision_type is RiskDecisionType.ALLOW
             else RiskDecision(
@@ -101,6 +107,13 @@ class PaperExecutionService:
                 "code": decision.code,
                 "reason": decision.reason,
                 "central_policy_version": central_decision.policy_version,
+                "central_policy_persisted_at": (
+                    control_snapshot.policy_persisted_at.isoformat() if control_snapshot is not None else None
+                ),
+                "kill_switch_change_id": (
+                    control_snapshot.kill_switch_change.change_id if control_snapshot is not None else None
+                ),
+                "durable_kill_switch_active": active_kill_switch,
                 "central_decision_type": central_decision.decision_type.value,
                 "central_decision_code": central_decision.code.value,
                 "central_reason": central_decision.reason,
