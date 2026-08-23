@@ -15,7 +15,12 @@ from typing import Mapping
 
 from algo_manus.application.backtesting import BarBacktestService
 from algo_manus.application.experiment_evidence import ExperimentEvidenceReadService
-from algo_manus.application.experiments import BatchBacktestRequest, ExperimentBatchService
+from algo_manus.application.experiments import (
+    BatchBacktestRequest,
+    ExperimentArtifactReadService,
+    ExperimentBatchService,
+    ExperimentResultArtifacts,
+)
 from algo_manus.application.leaderboard import LeaderboardService, LeaderboardSort
 from algo_manus.application.paper_promotion import PaperResearchPromotionService
 from algo_manus.domain.experiment import ExperimentBatch
@@ -55,6 +60,23 @@ class _MemoryExperimentRepository:
         if limit <= 0:
             raise ValueError("limit must be positive")
         return tuple(sorted(self._batches.values(), key=lambda item: (item.created_at, item.batch_id), reverse=True)[:limit])
+
+    def get_result_artifacts(
+        self, *, batch_id: str, instrument_id: str
+    ) -> ExperimentResultArtifacts | None:
+        batch = self._batches.get(batch_id)
+        if batch is None:
+            return None
+        result = next((item.backtest for item in batch.results if item.instrument_id == instrument_id), None)
+        if result is None:
+            return None
+        return ExperimentResultArtifacts(
+            batch_id=batch_id,
+            instrument_id=instrument_id,
+            result_spec_id=result.spec.spec_id,
+            trades=result.trades,
+            equity_curve=result.equity_curve,
+        )
 
 
 class _MemoryResearchManifestRepository:
@@ -145,7 +167,8 @@ class FixtureWorkbenchService:
             ),
             strategy=SmaCrossoverStrategy(),
             parameters=parameters,
-            created_at=datetime(2026, 8, 23, 9, 15, tzinfo=timezone.utc),
+            created_at=datetime.now(timezone.utc),
+            validated_at=datetime(2026, 8, 23, 9, 15, tzinfo=timezone.utc),
         )
 
     def paper_promotion(self, *, batch_id: str, instrument_id: str):
@@ -159,6 +182,16 @@ class FixtureWorkbenchService:
         """Return local persisted fixture batches newest-first for restart-safe workbench history."""
 
         return self._batches.list_recent(limit)
+
+    def experiment_artifacts(
+        self, *, batch_id: str, instrument_id: str
+    ) -> ExperimentResultArtifacts:
+        """Read stored fixture detail; this never reruns a strategy or loads market data."""
+
+        return ExperimentArtifactReadService(self._batches).get(
+            batch_id=batch_id,
+            instrument_id=instrument_id,
+        )
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):

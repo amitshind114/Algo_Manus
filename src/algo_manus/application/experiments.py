@@ -13,7 +13,7 @@ from algo_manus.application.dataset_validation import (
     ResearchDatasetValidationError,
     ResearchDatasetValidator,
 )
-from algo_manus.domain.backtest import BacktestResult, BacktestSpec
+from algo_manus.domain.backtest import BacktestResult, BacktestSpec, BacktestTrade
 from algo_manus.domain.experiment import (
     ExperimentBatch,
     ExperimentStatus,
@@ -37,6 +37,48 @@ class ExperimentBatchRepository(Protocol):
     def get(self, batch_id: str) -> ExperimentBatch | None: ...
 
     def list_recent(self, limit: int = 20) -> tuple[ExperimentBatch, ...]: ...
+
+    def get_result_artifacts(
+        self, *, batch_id: str, instrument_id: str
+    ) -> "ExperimentResultArtifacts | None": ...
+
+
+class ExperimentArtifactsUnavailableError(LookupError):
+    """Raised when a persisted batch has no detailed result artifacts to inspect."""
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentResultArtifacts:
+    """Exact bounded local detail emitted by an already-computed fixture backtest."""
+
+    batch_id: str
+    instrument_id: str
+    result_spec_id: str
+    trades: tuple[BacktestTrade, ...]
+    equity_curve: tuple[tuple[datetime, float], ...]
+
+    def __post_init__(self) -> None:
+        if not self.batch_id or not self.instrument_id or not self.result_spec_id:
+            raise ValueError("artifact batch, instrument and result spec identifiers are required")
+        if any(timestamp.tzinfo is None for timestamp, _ in self.equity_curve):
+            raise ValueError("artifact equity timestamps must be timezone-aware")
+
+
+class ExperimentArtifactReadService:
+    """Read detailed persisted evidence without recalculating a strategy or metric."""
+
+    def __init__(self, repository: ExperimentBatchRepository) -> None:
+        self._repository = repository
+
+    def get(self, *, batch_id: str, instrument_id: str) -> ExperimentResultArtifacts:
+        artifacts = self._repository.get_result_artifacts(
+            batch_id=batch_id, instrument_id=instrument_id
+        )
+        if artifacts is None:
+            raise ExperimentArtifactsUnavailableError(
+                f"persisted detailed artifacts are unavailable for {batch_id}/{instrument_id}"
+            )
+        return artifacts
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +119,7 @@ class ExperimentBatchService:
         strategy: Strategy,
         parameters: StrategyParameterRevision,
         created_at: datetime | None = None,
+        validated_at: datetime | None = None,
     ) -> ExperimentBatch:
         datasets = tuple(request.datasets_by_instrument.values())
         first = datasets[0]
@@ -117,8 +160,9 @@ class ExperimentBatchService:
             sort_keys=True,
             separators=(",", ":"),
         )
+        validation_timestamp = validated_at or timestamp
         validations = tuple(
-            self._validator.validate(dataset, validated_at=timestamp) for dataset in datasets
+            self._validator.validate(dataset, validated_at=validation_timestamp) for dataset in datasets
         )
         rejected = tuple(outcome for outcome in validations if not outcome.research_eligible)
         if rejected:

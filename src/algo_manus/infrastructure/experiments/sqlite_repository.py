@@ -8,7 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
-from algo_manus.domain.backtest import BacktestMetrics, BacktestResult, BacktestSpec
+from algo_manus.application.experiments import ExperimentResultArtifacts
+from algo_manus.domain.backtest import BacktestMetrics, BacktestResult, BacktestSpec, BacktestTrade
 from algo_manus.domain.experiment import (
     ExperimentBatch,
     ExperimentStatus,
@@ -17,8 +18,18 @@ from algo_manus.domain.experiment import (
 
 
 class SqliteExperimentBatchRepository:
-    def __init__(self, database_path: Path) -> None:
+    def __init__(
+        self,
+        database_path: Path,
+        *,
+        max_equity_points_per_result: int = 5_000,
+        max_trades_per_result: int = 5_000,
+    ) -> None:
+        if max_equity_points_per_result <= 0 or max_trades_per_result <= 0:
+            raise ValueError("artifact retention limits must be positive")
         self._database_path = database_path
+        self._max_equity_points_per_result = max_equity_points_per_result
+        self._max_trades_per_result = max_trades_per_result
         self._database_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -103,8 +114,56 @@ class SqliteExperimentBatchRepository:
             ):
                 if column not in result_columns:
                     connection.execute(f"ALTER TABLE experiment_results ADD COLUMN {column} REAL")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS experiment_result_artifacts (
+                    batch_id TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    result_spec_id TEXT NOT NULL,
+                    trade_count INTEGER NOT NULL,
+                    equity_point_count INTEGER NOT NULL,
+                    PRIMARY KEY (batch_id, instrument_id),
+                    FOREIGN KEY (batch_id, instrument_id)
+                        REFERENCES experiment_results(batch_id, instrument_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS experiment_trades (
+                    batch_id TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    entry_time TEXT NOT NULL,
+                    exit_time TEXT NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    entry_price REAL NOT NULL,
+                    exit_price REAL NOT NULL,
+                    gross_pnl REAL NOT NULL,
+                    cost REAL NOT NULL,
+                    PRIMARY KEY (batch_id, instrument_id, sequence),
+                    FOREIGN KEY (batch_id, instrument_id)
+                        REFERENCES experiment_result_artifacts(batch_id, instrument_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS experiment_equity_points (
+                    batch_id TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    equity REAL NOT NULL,
+                    PRIMARY KEY (batch_id, instrument_id, sequence),
+                    FOREIGN KEY (batch_id, instrument_id)
+                        REFERENCES experiment_result_artifacts(batch_id, instrument_id)
+                )
+                """
+            )
 
     def save(self, batch: ExperimentBatch) -> None:
+        self._validate_artifact_bounds(batch)
         with self._connection() as connection:
             if connection.execute("SELECT 1 FROM experiment_batches WHERE batch_id = ?", (batch.batch_id,)).fetchone():
                 return
@@ -161,6 +220,64 @@ class SqliteExperimentBatchRepository:
                         item.data_quality_note,
                     )
                     for item in batch.results
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO experiment_result_artifacts
+                (batch_id, instrument_id, result_spec_id, trade_count, equity_point_count)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        batch.batch_id,
+                        item.instrument_id,
+                        item.backtest.spec.spec_id,
+                        len(item.backtest.trades),
+                        len(item.backtest.equity_curve),
+                    )
+                    for item in batch.results
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO experiment_trades
+                (batch_id, instrument_id, sequence, entry_time, exit_time, quantity, entry_price, exit_price, gross_pnl, cost)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        batch.batch_id,
+                        item.instrument_id,
+                        sequence,
+                        trade.entry_time.isoformat(),
+                        trade.exit_time.isoformat(),
+                        trade.quantity,
+                        trade.entry_price,
+                        trade.exit_price,
+                        trade.gross_pnl,
+                        trade.cost,
+                    )
+                    for item in batch.results
+                    for sequence, trade in enumerate(item.backtest.trades)
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO experiment_equity_points
+                (batch_id, instrument_id, sequence, timestamp, equity)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        batch.batch_id,
+                        item.instrument_id,
+                        sequence,
+                        timestamp.isoformat(),
+                        equity,
+                    )
+                    for item in batch.results
+                    for sequence, (timestamp, equity) in enumerate(item.backtest.equity_curve)
                 ],
             )
 
@@ -237,3 +354,65 @@ class SqliteExperimentBatchRepository:
             results=results,
             research_manifest_id=batch_row["research_manifest_id"],
         )
+
+    def get_result_artifacts(
+        self, *, batch_id: str, instrument_id: str
+    ) -> ExperimentResultArtifacts | None:
+        with self._connection() as connection:
+            artifact = connection.execute(
+                """
+                SELECT result_spec_id, trade_count, equity_point_count
+                FROM experiment_result_artifacts
+                WHERE batch_id = ? AND instrument_id = ?
+                """,
+                (batch_id, instrument_id),
+            ).fetchone()
+            if artifact is None:
+                return None
+            trade_rows = connection.execute(
+                """
+                SELECT entry_time, exit_time, quantity, entry_price, exit_price, gross_pnl, cost
+                FROM experiment_trades
+                WHERE batch_id = ? AND instrument_id = ?
+                ORDER BY sequence
+                """,
+                (batch_id, instrument_id),
+            ).fetchall()
+            equity_rows = connection.execute(
+                """
+                SELECT timestamp, equity FROM experiment_equity_points
+                WHERE batch_id = ? AND instrument_id = ?
+                ORDER BY sequence
+                """,
+                (batch_id, instrument_id),
+            ).fetchall()
+        if len(trade_rows) != artifact["trade_count"] or len(equity_rows) != artifact["equity_point_count"]:
+            raise ValueError("persisted experiment artifacts are incomplete")
+        return ExperimentResultArtifacts(
+            batch_id=batch_id,
+            instrument_id=instrument_id,
+            result_spec_id=artifact["result_spec_id"],
+            trades=tuple(
+                BacktestTrade(
+                    entry_time=datetime.fromisoformat(row["entry_time"]),
+                    exit_time=datetime.fromisoformat(row["exit_time"]),
+                    quantity=row["quantity"],
+                    entry_price=row["entry_price"],
+                    exit_price=row["exit_price"],
+                    gross_pnl=row["gross_pnl"],
+                    cost=row["cost"],
+                )
+                for row in trade_rows
+            ),
+            equity_curve=tuple(
+                (datetime.fromisoformat(row["timestamp"]), row["equity"])
+                for row in equity_rows
+            ),
+        )
+
+    def _validate_artifact_bounds(self, batch: ExperimentBatch) -> None:
+        for item in batch.results:
+            if len(item.backtest.equity_curve) > self._max_equity_points_per_result:
+                raise ValueError("equity point retention limit exceeded")
+            if len(item.backtest.trades) > self._max_trades_per_result:
+                raise ValueError("trade retention limit exceeded")

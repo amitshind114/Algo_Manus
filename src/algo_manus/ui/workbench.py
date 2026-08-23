@@ -66,7 +66,7 @@ def run_workbench(st) -> None:
     elif page == "Strategies":
         _strategies(st, pd)
     elif page == "Reporting":
-        _reporting(st, pd)
+        _reporting(st, service, pd)
     elif page == "Risk & paper":
         _paper(st, by_id, pd, service, control_service, paper_ledger)
     else:
@@ -249,15 +249,22 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
         tiles[1].metric("Return", f"{result.metrics.total_return_pct:.2f}%")
         tiles[2].metric("Max drawdown", f"{result.metrics.max_drawdown_pct:.2f}%")
         tiles[3].metric("Trades", result.metrics.trade_count)
-        equity = pd.DataFrame(result.equity_curve, columns=["Timestamp", "Equity"])
-        if not equity.empty:
-            st.line_chart(equity.set_index("Timestamp"), height=230)
-        trades = pd.DataFrame([
-            {"Entry": trade.entry_time, "Exit": trade.exit_time, "Entry price": trade.entry_price,
-             "Exit price": trade.exit_price, "Net P&L": trade.net_pnl, "Cost": trade.cost}
-            for trade in result.trades
-        ])
-        st.dataframe(trades, width="stretch", hide_index=True)
+        try:
+            artifacts = service.experiment_artifacts(batch_id=batch.batch_id, instrument_id=security)
+        except LookupError:
+            st.warning("Detailed local equity and trade artifacts are unavailable for this saved batch. KPI summaries remain persisted; rerun this fixture experiment to inspect detail.")
+            artifacts = None
+        if artifacts is not None:
+            equity = pd.DataFrame(artifacts.equity_curve, columns=["Timestamp", "Equity"])
+            if not equity.empty:
+                st.line_chart(equity.set_index("Timestamp"), height=230)
+            trades = pd.DataFrame([
+                {"Entry": trade.entry_time, "Exit": trade.exit_time, "Entry price": trade.entry_price,
+                 "Exit price": trade.exit_price, "Net P&L": trade.net_pnl, "Cost": trade.cost}
+                for trade in artifacts.trades
+            ])
+            st.dataframe(trades, width="stretch", hide_index=True)
+            st.caption(f"Persisted local artifact: {artifacts.result_spec_id}")
         st.caption(f"Result spec: {result.spec.spec_id} · Dataset: {result.spec.dataset_id}")
 
 
@@ -313,17 +320,25 @@ def _strategies(st, pd) -> None:
         st.caption("No performance scores are invented here. KPI values appear only after an actual local experiment run.")
 
 
-def _reporting(st, pd) -> None:
+def _reporting(st, service, pd) -> None:
     _header(st, "Reporting & analytics", "Read the active experiment’s aggregate evidence rather than generating random performance figures.")
     batch = _select_persisted_batch(st, key="reporting_batch")
     if batch is None:
         return
     rows = []
     trades = []
+    unavailable_details = []
     for item in batch.results:
         result = item.backtest
         rows.append({"Instrument": item.instrument_id.split(":")[-1], "Net P&L": result.metrics.net_pnl, "Return %": result.metrics.total_return_pct, "Max DD %": result.metrics.max_drawdown_pct, "Trades": result.metrics.trade_count})
-        trades.extend({"Instrument": item.instrument_id.split(":")[-1], "Entry": trade.entry_time, "Exit": trade.exit_time, "Net P&L": trade.net_pnl, "Cost": trade.cost} for trade in result.trades)
+        try:
+            artifacts = service.experiment_artifacts(
+                batch_id=batch.batch_id, instrument_id=item.instrument_id
+            )
+        except LookupError:
+            unavailable_details.append(item.instrument_id.split(":")[-1])
+            continue
+        trades.extend({"Instrument": item.instrument_id.split(":")[-1], "Entry": trade.entry_time, "Exit": trade.exit_time, "Net P&L": trade.net_pnl, "Cost": trade.cost} for trade in artifacts.trades)
     frame = pd.DataFrame(rows)
     summary = st.columns(4)
     summary[0].metric("Aggregate net P&L", f"₹{frame['Net P&L'].sum():,.2f}")
@@ -335,6 +350,8 @@ def _reporting(st, pd) -> None:
         st.bar_chart(frame.set_index("Instrument")[["Net P&L"]], height=280)
         st.dataframe(frame, hide_index=True, width="stretch")
     with log:
+        if unavailable_details:
+            st.warning("Detailed local trade artifacts are unavailable for " + ", ".join(unavailable_details) + ". KPI summaries are still stored; rerun those fixture results to inspect trades.")
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
 
 

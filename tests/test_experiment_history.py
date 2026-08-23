@@ -31,3 +31,30 @@ class ExperimentHistoryTests(unittest.TestCase):
     def test_recent_history_rejects_non_positive_limit(self) -> None:
         with self.assertRaises(ValueError):
             FixtureWorkbenchService().recent_experiments(0)
+
+    def test_restart_history_orders_distinct_local_runs_by_actual_creation_time(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = FixtureWorkbenchService(root)
+            first = service.run_experiment(
+                selected_instrument_ids=("FIXTURE:NSE:EQ:ALPHA",),
+                fast_window=3,
+                slow_window=6,
+                initial_cash=100_000,
+                quantity=100,
+                commission_bps=1.0,
+                slippage_bps=1.0,
+            )
+            second = service.run_experiment(
+                selected_instrument_ids=("FIXTURE:NSE:EQ:ALPHA",),
+                fast_window=3,
+                slow_window=6,
+                initial_cash=100_000,
+                quantity=110,
+                commission_bps=1.0,
+                slippage_bps=1.0,
+            )
+
+            recovered = FixtureWorkbenchService(root).recent_experiments()
+
+            self.assertEqual([item.batch_id for item in recovered[:2]], [second.batch_id, first.batch_id])
