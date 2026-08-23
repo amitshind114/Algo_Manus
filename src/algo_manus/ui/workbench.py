@@ -907,6 +907,28 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         "Cancellations": "ORDER_CANCELLED",
                         "Rejections": "ORDER_REJECTED",
                     }[selected_event_type_scope]
+                    selected_lifecycle_state_scope = st.selectbox(
+                        "Interpreted local lifecycle state",
+                        options=[
+                            "All interpreted lifecycle states",
+                            "Pending-risk state",
+                            "Submitted state",
+                            "Filled state",
+                            "Cancelled state",
+                            "Rejected state",
+                            "Unprojectable lifecycle state",
+                        ],
+                        help="Changes only the displayed retained local audit rows by their already-interpreted lifecycle state; it cannot alter lifecycle, paper-operation or broker state.",
+                    )
+                    lifecycle_state_filter = {
+                        "All interpreted lifecycle states": "ALL",
+                        "Pending-risk state": "PENDING_RISK",
+                        "Submitted state": "SUBMITTED",
+                        "Filled state": "FILLED",
+                        "Cancelled state": "CANCELLED",
+                        "Rejected state": "REJECTED",
+                        "Unprojectable lifecycle state": "UNPROJECTABLE",
+                    }[selected_lifecycle_state_scope]
                     selected_side_scope = st.selectbox(
                         "Retained local payload side",
                         options=["All retained payload sides", "Buy payload side", "Sell payload side"],
@@ -977,6 +999,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             order_id=selected_order_id,
                             integrity_filter=integrity_filter,
                             event_type_filter=event_type_filter,
+                            lifecycle_state_filter=lifecycle_state_filter,
                             instrument_id_filter=instrument_id_filter,
                             side_filter=side_filter,
                             start_time=start_time,
@@ -986,6 +1009,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             order_id=selected_order_id,
                             integrity_filter=integrity_filter,
                             event_type_filter=event_type_filter,
+                            lifecycle_state_filter=lifecycle_state_filter,
                             instrument_id_filter=instrument_id_filter,
                             side_filter=side_filter,
                             start_time=start_time,
@@ -995,6 +1019,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             order_id=selected_order_id,
                             integrity_filter=integrity_filter,
                             event_type_filter=event_type_filter,
+                            lifecycle_state_filter=lifecycle_state_filter,
                             instrument_id_filter=instrument_id_filter,
                             side_filter=side_filter,
                             start_time=start_time,
@@ -1008,6 +1033,10 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                                     {"Filter": "Retained order", "Active local scope": filter_summary.order_scope},
                                     {"Filter": "Integrity", "Active local scope": filter_summary.integrity_scope},
                                     {"Filter": "Event type", "Active local scope": filter_summary.event_type_scope},
+                                    {
+                                        "Filter": "Interpreted lifecycle state",
+                                        "Active local scope": filter_summary.lifecycle_state_scope,
+                                    },
                                     {"Filter": "Retained payload side", "Active local scope": filter_summary.side_scope},
                                     {"Filter": "Retained instrument", "Active local scope": filter_summary.instrument_scope},
                                     {
@@ -1036,6 +1065,10 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         st.caption(f"Showing `{selected_integrity_scope.lower()}` within the selected local audit scope.")
                     if selected_event_type_scope != "All retained event types":
                         st.caption(f"Showing `{selected_event_type_scope.lower()}` within the selected local audit scope.")
+                    if selected_lifecycle_state_scope != "All interpreted lifecycle states":
+                        st.caption(
+                            f"Showing `{selected_lifecycle_state_scope.lower()}` within the selected local audit scope."
+                        )
                     if selected_side_scope != "All retained payload sides":
                         st.caption(f"Showing `{selected_side_scope.lower()}` within the selected local audit scope.")
                     if selected_instrument_id != "All retained local instruments":

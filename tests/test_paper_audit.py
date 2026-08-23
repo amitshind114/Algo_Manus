@@ -454,6 +454,47 @@ class PaperOperationAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown"):
             audit.rows(side_filter="HOLD")
 
+    def test_lifecycle_state_filter_scopes_rows_and_totals_after_restart(self) -> None:
+        filled = self._submit(order_id="paper-audit-lifecycle-filled")
+        self.service.fill(filled.order, fill_price=101, now=self.now + timedelta(minutes=1))
+        cancelled = self._submit(order_id="paper-audit-lifecycle-cancelled")
+        self.service.cancel(cancelled.order, reason="fixture cancel", now=self.now + timedelta(minutes=2))
+        self._submit(order_id="paper-audit-lifecycle-rejected", kill_switch_active=True)
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-lifecycle-unprojectable",
+                event_type=PaperEventType.ORDER_FILLED,
+                occurred_at=self.now + timedelta(minutes=3),
+                order_id="paper-audit-lifecycle-unprojectable",
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                payload=json.dumps({"payload": {}}),
+            )
+        )
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        all_rows = restarted.rows(lifecycle_state_filter="ALL")
+        filled_rows = restarted.rows(lifecycle_state_filter="FILLED")
+        rejected_rows = restarted.rows(lifecycle_state_filter="REJECTED")
+        unprojectable_rows = restarted.rows(lifecycle_state_filter="UNPROJECTABLE")
+        cancelled_summary = restarted.integrity(lifecycle_state_filter="CANCELLED")
+        filled_filter_summary = restarted.filter_summary(lifecycle_state_filter="FILLED")
+
+        self.assertGreater(len(all_rows), len(filled_rows))
+        self.assertEqual({row.lifecycle_state for row in filled_rows}, {"FILLED"})
+        self.assertEqual({row.lifecycle_state for row in rejected_rows}, {"REJECTED"})
+        self.assertEqual({row.lifecycle_state for row in unprojectable_rows}, {"UNPROJECTABLE"})
+        self.assertEqual(cancelled_summary.total_events, 1)
+        self.assertEqual(cancelled_summary.valid_events, 1)
+        self.assertEqual(filled_filter_summary.lifecycle_state_scope, "FILLED")
+
+    def test_lifecycle_state_filter_rejects_blank_or_unknown_values(self) -> None:
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "lifecycle_state_filter"):
+            audit.rows(lifecycle_state_filter=" ")
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            audit.rows(lifecycle_state_filter="RECONCILED")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -55,6 +55,7 @@ class LocalPaperOperationAuditFilterSummary:
     order_scope: str
     integrity_scope: str
     event_type_scope: str
+    lifecycle_state_scope: str
     instrument_scope: str
     side_scope: str
     start_time: datetime | None
@@ -93,6 +94,7 @@ class PaperOperationAuditTimelineReadService:
         order_id: str | None = None,
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
+        lifecycle_state_filter: str | None = None,
         instrument_id_filter: str | None = None,
         side_filter: str | None = None,
         start_time: datetime | None = None,
@@ -102,6 +104,7 @@ class PaperOperationAuditTimelineReadService:
             raise ValueError("limit must be positive")
         integrity_scope = self._integrity_scope(integrity_filter)
         event_type_scope = self._event_type_scope(event_type_filter)
+        lifecycle_state_scope = self._lifecycle_state_scope(lifecycle_state_filter)
         side_scope = self._side_scope(side_filter)
         time_window = self._time_window(start_time, end_time)
         states: dict[str, PaperOrderStatus] = {}
@@ -145,6 +148,7 @@ class PaperOperationAuditTimelineReadService:
             for row in rows
             if self._matches_integrity_scope(row, integrity_scope)
             and self._matches_event_type_scope(row, event_type_scope)
+            and self._matches_lifecycle_state_scope(row, lifecycle_state_scope)
             and self._matches_instrument_scope(row, instrument_scope)
             and self._matches_side_scope(row, side_scope)
             and self._matches_time_window(row, time_window)
@@ -156,6 +160,7 @@ class PaperOperationAuditTimelineReadService:
         order_id: str | None = None,
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
+        lifecycle_state_filter: str | None = None,
         instrument_id_filter: str | None = None,
         side_filter: str | None = None,
         start_time: datetime | None = None,
@@ -166,6 +171,7 @@ class PaperOperationAuditTimelineReadService:
             order_id=order_id,
             integrity_filter=integrity_filter,
             event_type_filter=event_type_filter,
+            lifecycle_state_filter=lifecycle_state_filter,
             instrument_id_filter=instrument_id_filter,
             side_filter=side_filter,
             start_time=start_time,
@@ -184,6 +190,7 @@ class PaperOperationAuditTimelineReadService:
         order_id: str | None = None,
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
+        lifecycle_state_filter: str | None = None,
         instrument_id_filter: str | None = None,
         side_filter: str | None = None,
         start_time: datetime | None = None,
@@ -195,6 +202,7 @@ class PaperOperationAuditTimelineReadService:
             order_scope=self._order_scope(order_id),
             integrity_scope=self._integrity_scope(integrity_filter),
             event_type_scope=self._event_type_scope(event_type_filter),
+            lifecycle_state_scope=self._lifecycle_state_scope(lifecycle_state_filter),
             instrument_scope=self._instrument_scope(instrument_id_filter, list(raw_rows)),
             side_scope=self._side_scope(side_filter),
             start_time=time_window[0],
@@ -273,6 +281,21 @@ class PaperOperationAuditTimelineReadService:
     @staticmethod
     def _matches_event_type_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
         return scope == "ALL" or row.event_type == scope
+
+    @staticmethod
+    def _lifecycle_state_scope(lifecycle_state_filter: str | None) -> str:
+        if lifecycle_state_filter is None:
+            return "ALL"
+        normalized = lifecycle_state_filter.strip().upper()
+        if not normalized:
+            raise ValueError("lifecycle_state_filter must not be blank")
+        if normalized not in {"ALL", *(state.value for state in PaperOrderStatus), "UNPROJECTABLE"}:
+            raise ValueError("unknown lifecycle_state_filter")
+        return normalized
+
+    @staticmethod
+    def _matches_lifecycle_state_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
+        return scope == "ALL" or row.lifecycle_state == scope
 
     @staticmethod
     def _instrument_scope(

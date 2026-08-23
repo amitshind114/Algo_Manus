@@ -39,6 +39,10 @@ The workbench may display all retained events, only `VALID` local interpretation
 
 The workbench may display all retained local event types or one type: `RISK_DECISION`, `ORDER_SUBMITTED`, `ORDER_FILLED`, `ORDER_CANCELLED`, or `ORDER_REJECTED`. A blank or unknown event-type filter is rejected by the application read service. Event-type scope combines with retained-order and integrity scopes only to narrow displayed local rows and totals; it does not alter the local ledger, lifecycle, risk controls, promotion evidence, or any execution state.
 
+## Optional interpreted lifecycle-state scope
+
+The application read service can restrict displayed rows to lifecycle states already interpreted from the chronological retained local event sequence: `ALL`, `PENDING_RISK`, `SUBMITTED`, `FILLED`, `CANCELLED`, `REJECTED`, or `UNPROJECTABLE`. `UNPROJECTABLE` denotes a retained event that cannot be applied by the existing local transition rule; this scope does not change that interpretation. Blank and unknown lifecycle-state filters are rejected. The workbench displays this scope separately from retained order, integrity, event type, payload side, instrument and UTC time-window controls. It only narrows displayed rows and totals; it never writes, repairs, replays, reconciles, exports, synchronizes or executes retained events.
+
 ## Optional retained instrument scope
 
 The workbench may display all retained local instruments or one retained canonical instrument ID. A blank or unknown instrument filter is rejected by the application read service. Instrument scope combines with retained-order, integrity and event-type scopes only to narrow displayed local rows and totals; it does not alter the local ledger, lifecycle, risk controls, promotion evidence, or any execution state.
@@ -49,7 +53,7 @@ The workbench may display all retained local events or an inclusive UTC start/en
 
 ## Active-filter summary
 
-The application read service can return an immutable local summary of the active retained order, integrity, event-type, instrument and UTC time-window scopes. `ALL` denotes an unrestricted dimension, while UTC start/end values are retained exactly as the validated inclusive bounds. The workbench displays this summary only for a valid scope set. It is not an export, broker request, execution instruction, reconciliation result, or repair record.
+The application read service can return an immutable local summary of the active retained order, integrity, event-type, interpreted lifecycle-state, payload-side, instrument and UTC time-window scopes. `ALL` denotes an unrestricted dimension, while UTC start/end values are retained exactly as the validated inclusive bounds. The workbench displays this summary only for a valid scope set. It is not an export, broker request, execution instruction, reconciliation result, or repair record.
 
 ## Local scope presets
 
