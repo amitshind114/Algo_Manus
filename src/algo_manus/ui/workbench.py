@@ -367,6 +367,7 @@ def _reporting(st, service, pd) -> None:
     summary[1].metric("Securities tested", len(frame))
     summary[2].metric("Completed trades", int(frame["Trades"].sum()))
     summary[3].metric("Worst drawdown", f"{frame['Max DD %'].max():.2f}%")
+    _local_evidence_export(st, service, batch, pd)
     curves, log = st.tabs(["Equity comparison", "Trade log"])
     with curves:
         st.bar_chart(frame.set_index("Instrument")[["Net P&L"]], height=280)
@@ -425,6 +426,39 @@ def _artifact_status_message(status: str) -> str:
         "result_spec_mismatch": "Detailed local artifacts do not match the saved result specification. KPI summaries remain persisted; no fixture result was recalculated.",
     }
     return messages.get(status, "Detailed local artifacts cannot be used for this saved batch. KPI summaries remain persisted; no fixture result was recalculated.")
+
+
+def _local_evidence_export(st, service, batch, pd) -> None:
+    with st.expander("Local evidence export", expanded=False):
+        export = service.evidence_export(batch_id=batch.batch_id)
+        st.caption("Fixture-only local evidence export. It is not broker data, market evidence, a performance certificate or an execution record.")
+        status_frame = pd.DataFrame(
+            [
+                {
+                    "Instrument": item.instrument_id.split(":")[-1],
+                    "Artifact integrity": item.artifact_integrity.status.value,
+                    "Trades": f"{item.artifact_integrity.actual_trade_count}/{item.artifact_integrity.expected_trade_count if item.artifact_integrity.expected_trade_count is not None else '—'}",
+                    "Equity points": f"{item.artifact_integrity.actual_equity_point_count}/{item.artifact_integrity.expected_equity_point_count if item.artifact_integrity.expected_equity_point_count is not None else '—'}",
+                }
+                for item in export.results
+            ]
+        )
+        st.dataframe(status_frame, hide_index=True, width="stretch")
+        st.download_button(
+            "Download local evidence summary JSON",
+            data=export.summary_json(),
+            file_name=f"{batch.batch_id}_fixture_evidence_summary.json",
+            mime="application/json",
+        )
+        if export.detailed_export_allowed:
+            st.download_button(
+                "Download integrity-complete local detail JSON",
+                data=export.detailed_json(),
+                file_name=f"{batch.batch_id}_fixture_evidence_detail.json",
+                mime="application/json",
+            )
+        else:
+            st.info("Detailed local evidence export is refused because at least one stored artifact is not integrity-complete. The summary export remains available.")
 
 
 def _paper(st, by_id, pd, service, control_service, ledger) -> None:

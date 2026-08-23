@@ -15,6 +15,10 @@ from typing import Mapping
 
 from algo_manus.application.backtesting import BarBacktestService
 from algo_manus.application.experiment_evidence import ExperimentEvidenceReadService
+from algo_manus.application.experiment_export import (
+    ExperimentEvidenceExport,
+    ExperimentEvidenceExportService,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -237,6 +241,14 @@ class FixtureWorkbenchService:
             batch_id=batch_id,
             instrument_id=instrument_id,
         )
+
+    def evidence_export(self, *, batch_id: str) -> ExperimentEvidenceExport:
+        """Build a local fixture evidence export; detailed content remains integrity-gated."""
+
+        export = ExperimentEvidenceExportService(self._batches).get(batch_id=batch_id)
+        if export is None:
+            raise LookupError(f"persisted experiment is unavailable: {batch_id}")
+        return export
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):
