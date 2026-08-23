@@ -23,6 +23,22 @@ class LocalRiskControlService:
         occurred_at = now or datetime.now(timezone.utc)
         self._repository.save_policy(policy, persisted_at=occurred_at)
 
+    def ensure_snapshot(
+        self,
+        policy: CentralRiskPolicy,
+        *,
+        initial_kill_reason: str,
+        now: datetime | None = None,
+    ) -> RiskControlSnapshot:
+        """Initialize explicit local controls once, then return their durable snapshot."""
+
+        occurred_at = now or datetime.now(timezone.utc)
+        if self._repository.get_policy(policy.policy_version) is None:
+            self._repository.save_policy(policy, persisted_at=occurred_at)
+        if self._repository.current_kill_switch_change() is None:
+            self.set_kill_switch(active=False, reason=initial_kill_reason, now=occurred_at)
+        return self.snapshot(policy.policy_version)
+
     def set_kill_switch(
         self,
         *,
@@ -54,3 +70,6 @@ class LocalRiskControlService:
             policy_persisted_at=persisted_at,
             kill_switch_change=kill_change,
         )
+
+    def kill_switch_history(self, limit: int = 20) -> tuple[KillSwitchChange, ...]:
+        return self._repository.list_kill_switch_changes(limit)

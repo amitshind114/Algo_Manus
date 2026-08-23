@@ -73,6 +73,24 @@ class RiskControlPersistenceTests(unittest.TestCase):
             self.assertIn(snapshot.kill_switch_change.change_id, event_payload)
             self.assertIn(self.policy.policy_version, event_payload)
 
+    def test_ensure_snapshot_initializes_once_and_retains_durable_history(self) -> None:
+        with TemporaryDirectory() as directory:
+            controls = LocalRiskControlService(SqliteRiskControlRepository(Path(directory) / "risk_controls.sqlite"))
+            first = controls.ensure_snapshot(
+                self.policy,
+                initial_kill_reason="initialize local workbench",
+                now=self.now,
+            )
+            second = controls.ensure_snapshot(
+                self.policy,
+                initial_kill_reason="should not append another initialization",
+                now=datetime(2026, 8, 23, 10, 1, tzinfo=timezone.utc),
+            )
+
+            self.assertEqual(first, second)
+            self.assertFalse(first.kill_switch_active)
+            self.assertEqual(len(controls.kill_switch_history()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

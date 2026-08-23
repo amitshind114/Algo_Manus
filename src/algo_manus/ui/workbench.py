@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
 
 from algo_manus.application.leaderboard import LeaderboardSort
 
@@ -34,6 +37,7 @@ def run_workbench(st) -> None:
     from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
     _style(st)
     service = FixtureWorkbenchService()
+    control_service = _local_risk_controls()
     instruments = service.instruments()
     by_id = {item.instrument_id: item for item in instruments}
     _state(st, tuple(by_id))
@@ -63,7 +67,7 @@ def run_workbench(st) -> None:
     elif page == "Reporting":
         _reporting(st, pd)
     elif page == "Risk & paper":
-        _paper(st, by_id, pd)
+        _paper(st, by_id, pd, control_service)
     else:
         _roadmap(st, instruments, pd)
 
@@ -73,8 +77,17 @@ def _state(st, instrument_ids: tuple[str, ...]) -> None:
     st.session_state.setdefault("history", [])
     st.session_state.setdefault("active_batch", None)
     st.session_state.setdefault("paper_events", [])
-    st.session_state.setdefault("paper_kill", False)
     st.session_state.setdefault("workspace", "Overview")
+
+
+def _local_risk_controls():
+    """Return the local-only persistent control service used by the workbench."""
+
+    from algo_manus.application.risk_controls import LocalRiskControlService
+    from algo_manus.infrastructure.risk import SqliteRiskControlRepository
+
+    data_root = Path(os.environ.get("ALGO_MANUS_DATA_DIR", str(Path.home() / ".algo-manus")))
+    return LocalRiskControlService(SqliteRiskControlRepository(data_root / "risk_controls.sqlite3"))
 
 
 def _sidebar_navigation(st) -> str:
@@ -124,7 +137,7 @@ def _overview(st) -> None:
     metrics[0].metric("Universe", "Fixture NSE equity")
     metrics[1].metric("Selected", len(st.session_state.selected_ids))
     metrics[2].metric("Experiments", len(st.session_state.history))
-    metrics[3].metric("Paper kill", "ON" if st.session_state.paper_kill else "OFF")
+    metrics[3].metric("Paper safety", "Control console")
     left, right = st.columns([1.25, 1])
     with left:
         st.subheader("Work flow")
@@ -309,7 +322,7 @@ def _reporting(st, pd) -> None:
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
 
 
-def _paper(st, by_id, pd) -> None:
+def _paper(st, by_id, pd, control_service) -> None:
     from algo_manus.application.paper_execution import PaperExecutionService
     from algo_manus.domain.instruments import InstrumentStatus
     from algo_manus.domain.research import DataValidationStatus, DatasetValidationOutcome
@@ -321,7 +334,41 @@ def _paper(st, by_id, pd) -> None:
     if batch is None:
         st.info("Run a fixture research experiment before using the paper simulator.")
         return
-    st.toggle("Paper kill switch", key="paper_kill")
+    fixture_policy = CentralRiskPolicy(
+        policy_version="fixture-central-risk-v1",
+        max_quantity_per_order=1_000,
+        max_notional_per_order=100_000,
+        max_open_positions=5,
+    )
+    snapshot = control_service.ensure_snapshot(
+        fixture_policy,
+        initial_kill_reason="initialized by local fixture workbench",
+    )
+    control_left, control_right, control_history = st.columns([0.9, 0.9, 1.45])
+    control_left.metric("Active local policy", snapshot.policy.policy_version)
+    control_right.metric("Durable kill state", "ACTIVE" if snapshot.kill_switch_active else "INACTIVE")
+    with control_history:
+        with st.expander("Persistent local control history", expanded=False):
+            st.caption("Local SQLite control history only. It is not a broker, account or cloud control plane.")
+            history = control_service.kill_switch_history()
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {"Time": item.occurred_at, "State": "ACTIVE" if item.active else "INACTIVE", "Reason": item.reason, "Change ID": item.change_id}
+                        for item in history
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+    change_left, change_right = st.columns([1.1, 0.9])
+    with change_left:
+        control_reason = st.text_input("Durable kill-switch change reason", value="local fixture operator action")
+    with change_right:
+        requested_kill_state = st.toggle("Set durable paper kill state active", value=snapshot.kill_switch_active)
+        if st.button("Persist local kill-switch state"):
+            control_service.set_kill_switch(active=requested_kill_state, reason=control_reason)
+            st.rerun()
     left, right = st.columns([0.9, 1.45])
     with left:
         instrument_id = st.selectbox("Instrument", [item.instrument_id for item in batch.results], format_func=lambda item: by_id[item].symbol)
@@ -341,7 +388,7 @@ def _paper(st, by_id, pd) -> None:
                 side=side, quantity=quantity, reference_price=mark, strategy_revision_id=batch.parameter_revision_id,
             )
             validation = DatasetValidationOutcome(
-                dataset_id=batch.results[0].dataset_id,
+                dataset_id=next(item.dataset_id for item in batch.results if item.instrument_id == instrument_id),
                 status=DataValidationStatus.ACCEPTED,
                 policy_version="fixture-paper-context-v1",
                 validated_at=datetime.now(timezone.utc),
@@ -349,19 +396,15 @@ def _paper(st, by_id, pd) -> None:
             execution = PaperExecutionService(
                 DeterministicRiskPolicy(),
                 SessionLedger(),
-                CentralRiskPolicy(
-                    policy_version="fixture-central-risk-v1",
-                    max_quantity_per_order=1_000,
-                    max_notional_per_order=100_000,
-                    max_open_positions=5,
-                ),
+                snapshot.policy,
             )
             submission = execution.submit(
                 intent=intent, portfolio=PaperPortfolioSnapshot(cash=100_000, positions={}, realized_pnl=0, session_order_count=0),
                 marks={instrument_id: mark}, limits=RiskLimits(max_gross_notional=250_000, max_notional_per_instrument=100_000, max_session_orders=5, max_daily_loss=10_000),
-                kill_switch_active=st.session_state.paper_kill,
+                kill_switch_active=snapshot.kill_switch_active,
                 instrument_status=InstrumentStatus.ACTIVE,
                 validation_outcome=validation,
+                control_snapshot=snapshot,
             )
             if submission.decision.allowed:
                 execution.fill(submission.order, fill_price=mark)
@@ -373,8 +416,31 @@ def _paper(st, by_id, pd) -> None:
         if not st.session_state.paper_events:
             st.info("No fixture paper events yet.")
         else:
+            latest_risk_event = next(
+                (event for event in reversed(st.session_state.paper_events) if event.event_type.value == "RISK_DECISION"),
+                None,
+            )
+            if latest_risk_event is not None:
+                risk_evidence = json.loads(latest_risk_event.payload).get("payload", {})
+                evidence = st.columns(3)
+                evidence[0].metric("Latest central gate", risk_evidence.get("central_decision_type", "—"))
+                evidence[1].metric("Central decision code", risk_evidence.get("central_decision_code", "—"))
+                evidence[2].metric("Durable control", "ACTIVE" if risk_evidence.get("durable_kill_switch_active") else "INACTIVE")
+                st.caption(
+                    f"Policy {risk_evidence.get('central_policy_version', '—')} · "
+                    f"Kill change {risk_evidence.get('kill_switch_change_id', '—')}"
+                )
             frame = pd.DataFrame([
-                {"Time": event.occurred_at, "Event": event.event_type, "Order": event.order_id, "Instrument": by_id[event.instrument_id].symbol}
+                {
+                    "Time": event.occurred_at,
+                    "Event": event.event_type,
+                    "Order": event.order_id,
+                    "Instrument": by_id[event.instrument_id].symbol,
+                    "Central policy": json.loads(event.payload).get("payload", {}).get("central_policy_version"),
+                    "Central decision": json.loads(event.payload).get("payload", {}).get("central_decision_type"),
+                    "Central code": json.loads(event.payload).get("payload", {}).get("central_decision_code"),
+                    "Durable kill change": json.loads(event.payload).get("payload", {}).get("kill_switch_change_id"),
+                }
                 for event in st.session_state.paper_events
             ])
             st.dataframe(frame.iloc[::-1], width="stretch", hide_index=True)
