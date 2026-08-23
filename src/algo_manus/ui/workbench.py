@@ -41,7 +41,7 @@ def run_workbench(st) -> None:
     paper_ledger = _local_paper_ledger()
     instruments = service.instruments()
     by_id = {item.instrument_id: item for item in instruments}
-    _state(st, tuple(by_id))
+    _state(st, tuple(by_id), service.recent_experiments())
 
     with st.sidebar:
         st.markdown("## Algo Manus")
@@ -73,10 +73,15 @@ def run_workbench(st) -> None:
         _roadmap(st, instruments, pd)
 
 
-def _state(st, instrument_ids: tuple[str, ...]) -> None:
+def _state(st, instrument_ids: tuple[str, ...], persisted_history) -> None:
     st.session_state.setdefault("selected_ids", instrument_ids[:3])
-    st.session_state.setdefault("history", [])
-    st.session_state.setdefault("active_batch", None)
+    st.session_state["history"] = list(persisted_history)
+    persisted_by_id = {item.batch_id: item for item in persisted_history}
+    active = st.session_state.get("active_batch")
+    if active is None or active.batch_id not in persisted_by_id:
+        st.session_state["active_batch"] = persisted_history[0] if persisted_history else None
+    else:
+        st.session_state["active_batch"] = persisted_by_id[active.batch_id]
     st.session_state.setdefault("workspace", "Overview")
 
 
@@ -228,7 +233,7 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
                 initial_cash=capital, quantity=quantity, commission_bps=commission, slippage_bps=slippage,
             )
             st.session_state.active_batch = batch
-            st.session_state.history.append(batch)
+            st.session_state.history = list(service.recent_experiments())
             st.success(f"Created {batch.batch_id}")
         batch = st.session_state.active_batch
         if batch is None:
@@ -258,9 +263,8 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
 
 def _leaderboard(st, service, pd) -> None:
     _header(st, "Multi-security test leaderboard", "Run one strategy revision across a selected universe, then compare return and risk context in one detailed research table.")
-    batch = st.session_state.active_batch
+    batch = _select_persisted_batch(st, key="leaderboard_batch")
     if batch is None:
-        st.info("Run a local experiment in **Research lab** first.")
         return
     options = leaderboard_sort_options()
     rows = service.leaderboard(batch, options[st.selectbox("Sort by", list(options))])
@@ -281,10 +285,10 @@ def _leaderboard(st, service, pd) -> None:
     with st.expander("Experiment history"):
         history = pd.DataFrame([
             {"Batch": item.batch_id, "Strategy": item.strategy_id, "Revision": item.parameter_revision_id,
-             "Universe": len(item.results), "Created": item.created_at}
+             "Universe": len(item.results), "Created": item.created_at, "Research manifest": item.research_manifest_id}
             for item in st.session_state.history
         ])
-        st.dataframe(history.iloc[::-1], width="stretch", hide_index=True)
+        st.dataframe(history, width="stretch", hide_index=True)
 
 
 def _strategies(st, pd) -> None:
@@ -311,9 +315,8 @@ def _strategies(st, pd) -> None:
 
 def _reporting(st, pd) -> None:
     _header(st, "Reporting & analytics", "Read the active experiment’s aggregate evidence rather than generating random performance figures.")
-    batch = st.session_state.active_batch
+    batch = _select_persisted_batch(st, key="reporting_batch")
     if batch is None:
-        st.info("Run a multi-security experiment first. Reporting is derived from stored local results only.")
         return
     rows = []
     trades = []
@@ -326,13 +329,34 @@ def _reporting(st, pd) -> None:
     summary[0].metric("Aggregate net P&L", f"₹{frame['Net P&L'].sum():,.2f}")
     summary[1].metric("Securities tested", len(frame))
     summary[2].metric("Completed trades", int(frame["Trades"].sum()))
-    summary[3].metric("Worst drawdown", f"{frame['Max DD %'].min():.2f}%")
+    summary[3].metric("Worst drawdown", f"{frame['Max DD %'].max():.2f}%")
     curves, log = st.tabs(["Equity comparison", "Trade log"])
     with curves:
         st.bar_chart(frame.set_index("Instrument")[["Net P&L"]], height=280)
         st.dataframe(frame, hide_index=True, width="stretch")
     with log:
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
+
+
+def _select_persisted_batch(st, *, key: str):
+    history = st.session_state.history
+    if not history:
+        st.info("Run a persisted fixture experiment first.")
+        return None
+    active = st.session_state.active_batch
+    selected_id = st.selectbox(
+        "Persisted local experiment",
+        options=[item.batch_id for item in history],
+        index=next(
+            (index for index, item in enumerate(history) if active is not None and item.batch_id == active.batch_id),
+            0,
+        ),
+        key=key,
+    )
+    batch = next(item for item in history if item.batch_id == selected_id)
+    st.session_state.active_batch = batch
+    st.caption(f"Research manifest: {batch.research_manifest_id or 'missing — paper promotion blocked'}")
+    return batch
 
 
 def _paper(st, by_id, pd, service, control_service, ledger) -> None:

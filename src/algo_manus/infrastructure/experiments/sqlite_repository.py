@@ -165,6 +165,23 @@ class SqliteExperimentBatchRepository:
             )
 
     def get(self, batch_id: str) -> ExperimentBatch | None:
+        return self._load(batch_id)
+
+    def list_recent(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        with self._connection() as connection:
+            identifiers = connection.execute(
+                "SELECT batch_id FROM experiment_batches ORDER BY created_at DESC, batch_id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        batches = []
+        for row in identifiers:
+            batch = self._load(row["batch_id"])
+            if batch is not None:
+                batches.append(batch)
+        return tuple(batches)
+
+    def _load(self, batch_id: str) -> ExperimentBatch | None:
         with self._connection() as connection:
             batch_row = connection.execute("SELECT * FROM experiment_batches WHERE batch_id = ?", (batch_id,)).fetchone()
             if batch_row is None:

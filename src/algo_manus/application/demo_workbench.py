@@ -51,6 +51,11 @@ class _MemoryExperimentRepository:
     def get(self, batch_id: str) -> ExperimentBatch | None:
         return self._batches.get(batch_id)
 
+    def list_recent(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        return tuple(sorted(self._batches.values(), key=lambda item: (item.created_at, item.batch_id), reverse=True)[:limit])
+
 
 class _MemoryResearchManifestRepository:
     """Fixture-only evidence repository; Streamlit state still owns visible history."""
@@ -149,6 +154,11 @@ class FixtureWorkbenchService:
         return PaperResearchPromotionService(
             ExperimentEvidenceReadService(self._batches, self._manifests)
         ).resolve(batch_id=batch_id, instrument_id=instrument_id)
+
+    def recent_experiments(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
+        """Return local persisted fixture batches newest-first for restart-safe workbench history."""
+
+        return self._batches.list_recent(limit)
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):

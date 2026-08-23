@@ -36,6 +36,8 @@ class ExperimentBatchRepository(Protocol):
 
     def get(self, batch_id: str) -> ExperimentBatch | None: ...
 
+    def list_recent(self, limit: int = 20) -> tuple[ExperimentBatch, ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class BatchBacktestRequest:
