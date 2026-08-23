@@ -56,7 +56,7 @@ def run_workbench(st) -> None:
         st.caption("Real broker sync remains separately gated.")
 
     if page == "Overview":
-        _overview(st)
+        _overview(st, service, pd)
     elif page == "Data & instruments":
         _data_and_instruments(st, instruments, by_id, pd)
     elif page == "Backtesting":
@@ -148,7 +148,7 @@ def _header(st, title: str, subtitle: str) -> None:
     )
 
 
-def _overview(st) -> None:
+def _overview(st, service, pd) -> None:
     _header(st, "Research command center", "A functional local workflow before broker data is separately approved.")
     batch = st.session_state.active_batch
     metrics = st.columns(4)
@@ -169,6 +169,31 @@ def _overview(st) -> None:
             st.caption(f"Strategy: {batch.strategy_id}")
             st.caption(f"Revision: {batch.parameter_revision_id}")
             st.caption(f"Snapshot: {batch.universe_snapshot_id}")
+    with st.expander("Local evidence lifecycle", expanded=False):
+        lifecycle = service.evidence_lifecycle()
+        st.caption("Read-only local fixture-store visibility. No cleanup, deletion, compaction, backup or cloud synchronization action is available here.")
+        first, second, third = st.columns(3)
+        first.metric("Store", "Local SQLite" if lifecycle.is_persistent else "In-memory fixture")
+        second.metric("Stored batches", lifecycle.batch_count)
+        third.metric("Database size", f"{lifecycle.database_size_bytes:,} bytes")
+        artifact_left, artifact_middle, artifact_right = st.columns(3)
+        artifact_left.metric("Stored results", lifecycle.result_count)
+        artifact_middle.metric("Artifact headers", lifecycle.artifact_count)
+        artifact_right.metric("Completed local trades", lifecycle.completed_trade_count)
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"Local evidence field": "Equity points", "Value": lifecycle.equity_point_count},
+                    {"Local evidence field": "Oldest batch", "Value": lifecycle.oldest_batch_created_at or "—"},
+                    {"Local evidence field": "Newest batch", "Value": lifecycle.newest_batch_created_at or "—"},
+                    {"Local evidence field": "Equity-point bound per result", "Value": lifecycle.max_equity_points_per_result or "In-memory only"},
+                    {"Local evidence field": "Trade bound per result", "Value": lifecycle.max_trades_per_result or "In-memory only"},
+                ]
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness.")
 
 
 def _data_and_instruments(st, instruments, by_id, pd) -> None:

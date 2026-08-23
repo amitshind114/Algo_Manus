@@ -13,6 +13,7 @@ from algo_manus.application.experiments import (
     ExperimentArtifactIntegrityStatus,
     ExperimentResultArtifacts,
 )
+from algo_manus.application.evidence_lifecycle import LocalEvidenceLifecycle
 from algo_manus.domain.backtest import BacktestMetrics, BacktestResult, BacktestSpec, BacktestTrade
 from algo_manus.domain.experiment import (
     ExperimentBatch,
@@ -494,6 +495,36 @@ class SqliteExperimentBatchRepository:
             actual_trade_count=actual_trade_count,
             expected_equity_point_count=artifact["equity_point_count"],
             actual_equity_point_count=actual_equity_point_count,
+        )
+
+    def lifecycle_snapshot(self) -> LocalEvidenceLifecycle:
+        """Read local SQLite store counts without modifying evidence or retention state."""
+
+        with self._connection() as connection:
+            batch_summary = connection.execute(
+                "SELECT COUNT(*), MIN(created_at), MAX(created_at) FROM experiment_batches"
+            ).fetchone()
+            result_count = connection.execute("SELECT COUNT(*) FROM experiment_results").fetchone()[0]
+            artifact_count = connection.execute("SELECT COUNT(*) FROM experiment_result_artifacts").fetchone()[0]
+            completed_trade_count = connection.execute("SELECT COUNT(*) FROM experiment_trades").fetchone()[0]
+            equity_point_count = connection.execute("SELECT COUNT(*) FROM experiment_equity_points").fetchone()[0]
+        return LocalEvidenceLifecycle(
+            is_persistent=True,
+            database_path=str(self._database_path),
+            database_size_bytes=self._database_path.stat().st_size if self._database_path.exists() else 0,
+            batch_count=batch_summary[0],
+            result_count=result_count,
+            artifact_count=artifact_count,
+            completed_trade_count=completed_trade_count,
+            equity_point_count=equity_point_count,
+            oldest_batch_created_at=(
+                datetime.fromisoformat(batch_summary[1]) if batch_summary[1] is not None else None
+            ),
+            newest_batch_created_at=(
+                datetime.fromisoformat(batch_summary[2]) if batch_summary[2] is not None else None
+            ),
+            max_equity_points_per_result=self._max_equity_points_per_result,
+            max_trades_per_result=self._max_trades_per_result,
         )
 
     def _validate_artifact_bounds(self, batch: ExperimentBatch) -> None:

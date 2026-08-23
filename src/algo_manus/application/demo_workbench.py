@@ -19,6 +19,7 @@ from algo_manus.application.experiment_export import (
     ExperimentEvidenceExport,
     ExperimentEvidenceExportService,
 )
+from algo_manus.application.evidence_lifecycle import LocalEvidenceLifecycle, LocalEvidenceLifecycleReadService
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -115,6 +116,25 @@ class _MemoryExperimentRepository:
             actual_trade_count=len(result.trades),
             expected_equity_point_count=len(result.equity_curve),
             actual_equity_point_count=len(result.equity_curve),
+        )
+
+    def lifecycle_snapshot(self) -> LocalEvidenceLifecycle:
+        batches = tuple(self._batches.values())
+        results = tuple(result for batch in batches for result in batch.results)
+        created_at = tuple(batch.created_at for batch in batches)
+        return LocalEvidenceLifecycle(
+            is_persistent=False,
+            database_path=None,
+            database_size_bytes=0,
+            batch_count=len(batches),
+            result_count=len(results),
+            artifact_count=len(results),
+            completed_trade_count=sum(len(result.backtest.trades) for result in results),
+            equity_point_count=sum(len(result.backtest.equity_curve) for result in results),
+            oldest_batch_created_at=min(created_at) if created_at else None,
+            newest_batch_created_at=max(created_at) if created_at else None,
+            max_equity_points_per_result=None,
+            max_trades_per_result=None,
         )
 
 
@@ -249,6 +269,11 @@ class FixtureWorkbenchService:
         if export is None:
             raise LookupError(f"persisted experiment is unavailable: {batch_id}")
         return export
+
+    def evidence_lifecycle(self) -> LocalEvidenceLifecycle:
+        """Return local store metadata only; no cleanup or retention action is performed."""
+
+        return LocalEvidenceLifecycleReadService(self._batches).snapshot()
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):
