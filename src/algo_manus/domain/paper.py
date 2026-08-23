@@ -8,6 +8,7 @@ from enum import StrEnum
 
 from algo_manus.domain.risk import OrderIntent, RiskDecision
 from algo_manus.domain.risk_engine import RiskEngineDecision
+from algo_manus.domain.risk import OrderSide
 
 
 class PaperOrderStatus(StrEnum):
@@ -50,3 +51,39 @@ class PaperSubmission:
     order: PaperOrder
     decision: RiskDecision
     central_decision: RiskEngineDecision | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PaperPositionProjection:
+    """Derived local position state from replayable paper fill events."""
+
+    instrument_id: str
+    quantity: int
+    average_entry_price: float
+
+
+@dataclass(frozen=True, slots=True)
+class PaperOrderProjection:
+    """Derived local order state; never an external order acknowledgement."""
+
+    order_id: str
+    instrument_id: str
+    side: OrderSide | None
+    quantity: int | None
+    status: PaperOrderStatus
+    submitted_at: datetime | None
+    filled_at: datetime | None
+    fill_price: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class PaperPortfolioProjection:
+    """Deterministic, local-only replay result using an explicit starting cash balance."""
+
+    starting_cash: float
+    cash: float
+    realized_pnl: float
+    positions: tuple[PaperPositionProjection, ...]
+    orders: tuple[PaperOrderProjection, ...]
+    session_order_count: int
+    unprojectable_event_ids: tuple[str, ...]

@@ -89,3 +89,24 @@ class SqlitePaperLedger:
             )
             for row in rows
         )
+
+    def events(self, limit: int = 1_000) -> tuple[PaperEvent, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM paper_events ORDER BY event_sequence ASC LIMIT ?", (limit,)
+            ).fetchall()
+        from datetime import datetime
+
+        return tuple(
+            PaperEvent(
+                event_id=row["event_id"],
+                event_type=PaperEventType(row["event_type"]),
+                occurred_at=datetime.fromisoformat(row["occurred_at"]),
+                order_id=row["order_id"],
+                instrument_id=row["instrument_id"],
+                payload=row["payload"],
+            )
+            for row in rows
+        )

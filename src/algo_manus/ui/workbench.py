@@ -38,6 +38,7 @@ def run_workbench(st) -> None:
     _style(st)
     service = FixtureWorkbenchService()
     control_service = _local_risk_controls()
+    paper_ledger = _local_paper_ledger()
     instruments = service.instruments()
     by_id = {item.instrument_id: item for item in instruments}
     _state(st, tuple(by_id))
@@ -67,7 +68,7 @@ def run_workbench(st) -> None:
     elif page == "Reporting":
         _reporting(st, pd)
     elif page == "Risk & paper":
-        _paper(st, by_id, pd, control_service)
+        _paper(st, by_id, pd, control_service, paper_ledger)
     else:
         _roadmap(st, instruments, pd)
 
@@ -76,7 +77,6 @@ def _state(st, instrument_ids: tuple[str, ...]) -> None:
     st.session_state.setdefault("selected_ids", instrument_ids[:3])
     st.session_state.setdefault("history", [])
     st.session_state.setdefault("active_batch", None)
-    st.session_state.setdefault("paper_events", [])
     st.session_state.setdefault("workspace", "Overview")
 
 
@@ -88,6 +88,15 @@ def _local_risk_controls():
 
     data_root = Path(os.environ.get("ALGO_MANUS_DATA_DIR", str(Path.home() / ".algo-manus")))
     return LocalRiskControlService(SqliteRiskControlRepository(data_root / "risk_controls.sqlite3"))
+
+
+def _local_paper_ledger():
+    """Return the durable local-only paper ledger used by the fixture workbench."""
+
+    from algo_manus.infrastructure.paper.sqlite_ledger import SqlitePaperLedger
+
+    data_root = Path(os.environ.get("ALGO_MANUS_DATA_DIR", str(Path.home() / ".algo-manus")))
+    return SqlitePaperLedger(data_root / "paper_ledger.sqlite3")
 
 
 def _sidebar_navigation(st) -> str:
@@ -322,8 +331,9 @@ def _reporting(st, pd) -> None:
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
 
 
-def _paper(st, by_id, pd, control_service) -> None:
+def _paper(st, by_id, pd, control_service, ledger) -> None:
     from algo_manus.application.paper_execution import PaperExecutionService
+    from algo_manus.application.paper_projection import PaperOperationsReadService
     from algo_manus.domain.instruments import InstrumentStatus
     from algo_manus.domain.research import DataValidationStatus, DatasetValidationOutcome
     from algo_manus.domain.risk import DeterministicRiskPolicy, OrderIntent, OrderSide, PaperPortfolioSnapshot, RiskLimits
@@ -344,6 +354,9 @@ def _paper(st, by_id, pd, control_service) -> None:
         fixture_policy,
         initial_kill_reason="initialized by local fixture workbench",
     )
+    paper_operations = PaperOperationsReadService(ledger)
+    fixture_starting_cash = 100_000.0
+    projection = paper_operations.portfolio(starting_cash=fixture_starting_cash)
     control_left, control_right, control_history = st.columns([0.9, 0.9, 1.45])
     control_left.metric("Active local policy", snapshot.policy.policy_version)
     control_right.metric("Durable kill state", "ACTIVE" if snapshot.kill_switch_active else "INACTIVE")
@@ -376,15 +389,8 @@ def _paper(st, by_id, pd, control_service) -> None:
         quantity = st.number_input("Fixture quantity", min_value=1, value=10, step=1)
         mark = st.number_input("Fixture mark", min_value=1.0, value=100.0, step=1.0)
         if st.button("Simulate risk-gated paper order", type="primary"):
-            class SessionLedger:
-                def append(self, event):
-                    st.session_state.paper_events.append(event)
-
-                def order_ids(self):
-                    return frozenset(event.order_id for event in st.session_state.paper_events)
-
             intent = OrderIntent(
-                order_id=f"fixture-paper-{len(st.session_state.paper_events) + 1}", instrument_id=instrument_id,
+                order_id=f"fixture-paper-{len(paper_operations.events()) + 1}", instrument_id=instrument_id,
                 side=side, quantity=quantity, reference_price=mark, strategy_revision_id=batch.parameter_revision_id,
             )
             validation = DatasetValidationOutcome(
@@ -395,11 +401,17 @@ def _paper(st, by_id, pd, control_service) -> None:
             )
             execution = PaperExecutionService(
                 DeterministicRiskPolicy(),
-                SessionLedger(),
+                ledger,
                 snapshot.policy,
             )
             submission = execution.submit(
-                intent=intent, portfolio=PaperPortfolioSnapshot(cash=100_000, positions={}, realized_pnl=0, session_order_count=0),
+                intent=intent,
+                portfolio=PaperPortfolioSnapshot(
+                    cash=projection.cash,
+                    positions={position.instrument_id: position.quantity for position in projection.positions},
+                    realized_pnl=projection.realized_pnl,
+                    session_order_count=projection.session_order_count,
+                ),
                 marks={instrument_id: mark}, limits=RiskLimits(max_gross_notional=250_000, max_notional_per_instrument=100_000, max_session_orders=5, max_daily_loss=10_000),
                 kill_switch_active=snapshot.kill_switch_active,
                 instrument_status=InstrumentStatus.ACTIVE,
@@ -408,16 +420,23 @@ def _paper(st, by_id, pd, control_service) -> None:
             )
             if submission.decision.allowed:
                 execution.fill(submission.order, fill_price=mark)
-                st.success("Fixture order accepted and filled in the local event log.")
+                st.success("Fixture order accepted and filled in the durable local event ledger.")
+                st.rerun()
             else:
                 st.error(f"Risk {submission.central_decision.decision_type.lower()} fixture order: {submission.decision.code}")
     with right:
-        st.subheader("Local paper event ledger")
-        if not st.session_state.paper_events:
-            st.info("No fixture paper events yet.")
+        st.subheader("Durable local paper operations")
+        projection_tiles = st.columns(4)
+        projection_tiles[0].metric("Fixture starting cash", f"₹{fixture_starting_cash:,.0f}")
+        projection_tiles[1].metric("Projected cash", f"₹{projection.cash:,.2f}")
+        projection_tiles[2].metric("Realized P&L", f"₹{projection.realized_pnl:,.2f}")
+        projection_tiles[3].metric("Open local positions", len(projection.positions))
+        events = paper_operations.events()
+        if not events:
+            st.info("No durable fixture paper events yet.")
         else:
             latest_risk_event = next(
-                (event for event in reversed(st.session_state.paper_events) if event.event_type.value == "RISK_DECISION"),
+                (event for event in reversed(events) if event.event_type.value == "RISK_DECISION"),
                 None,
             )
             if latest_risk_event is not None:
@@ -441,9 +460,32 @@ def _paper(st, by_id, pd, control_service) -> None:
                     "Central code": json.loads(event.payload).get("payload", {}).get("central_decision_code"),
                     "Durable kill change": json.loads(event.payload).get("payload", {}).get("kill_switch_change_id"),
                 }
-                for event in st.session_state.paper_events
+                for event in events
             ])
             st.dataframe(frame.iloc[::-1], width="stretch", hide_index=True)
+            positions = pd.DataFrame(
+                [
+                    {"Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol if item.instrument_id in by_id else item.instrument_id,
+                     "Quantity": item.quantity, "Average entry": item.average_entry_price}
+                    for item in projection.positions
+                ]
+            )
+            with st.expander("Replay projection details", expanded=False):
+                st.caption("Derived from the durable local event ledger and the displayed fixture starting cash; it is not broker reconciliation.")
+                st.dataframe(positions, hide_index=True, width="stretch")
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {"Order": item.order_id, "Instrument": item.instrument_id, "Side": item.side, "Quantity": item.quantity,
+                             "State": item.status, "Fill price": item.fill_price}
+                            for item in projection.orders
+                        ]
+                    ),
+                    hide_index=True,
+                    width="stretch",
+                )
+                if projection.unprojectable_event_ids:
+                    st.warning(f"Unprojectable local event IDs: {', '.join(projection.unprojectable_event_ids)}")
 
 
 def _roadmap(st, instruments, pd) -> None:

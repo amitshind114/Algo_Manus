@@ -121,11 +121,32 @@ class PaperExecutionService:
         )
         if not decision.allowed:
             order = PaperOrder(intent=intent, status=PaperOrderStatus.REJECTED, submitted_at=occurred_at)
-            self._append_event(PaperEventType.ORDER_REJECTED, intent, occurred_at, {"code": decision.code})
+            self._append_event(
+                PaperEventType.ORDER_REJECTED,
+                intent,
+                occurred_at,
+                {
+                    "code": decision.code,
+                    "side": intent.side.value,
+                    "quantity": intent.quantity,
+                    "reference_price": intent.reference_price,
+                },
+            )
             return PaperSubmission(order=order, decision=decision, central_decision=central_decision)
 
         order = PaperOrder(intent=intent, status=PaperOrderStatus.SUBMITTED, submitted_at=occurred_at)
-        self._append_event(PaperEventType.ORDER_SUBMITTED, intent, occurred_at, {"paper_only": True})
+        self._append_event(
+            PaperEventType.ORDER_SUBMITTED,
+            intent,
+            occurred_at,
+            {
+                "paper_only": True,
+                "side": intent.side.value,
+                "quantity": intent.quantity,
+                "reference_price": intent.reference_price,
+                "strategy_revision_id": intent.strategy_revision_id,
+            },
+        )
         return PaperSubmission(order=order, decision=decision, central_decision=central_decision)
 
     def fill(self, order: PaperOrder, *, fill_price: float, now: datetime | None = None) -> PaperOrder:
@@ -145,7 +166,13 @@ class PaperExecutionService:
             PaperEventType.ORDER_FILLED,
             order.intent,
             occurred_at,
-            {"fill_price": fill_price, "quantity": order.intent.quantity, "paper_only": True},
+            {
+                "fill_price": fill_price,
+                "quantity": order.intent.quantity,
+                "side": order.intent.side.value,
+                "reference_price": order.intent.reference_price,
+                "paper_only": True,
+            },
         )
         return filled
 
