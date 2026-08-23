@@ -1,6 +1,6 @@
 # India Algo Platform
 
-> **Status: foundation planning.** This repository starts as a research and paper-trading platform for Indian listed markets. It will not submit live orders until its data, risk, execution, security and operational controls have passed separately defined readiness gates.
+> **Status: local research and paper foundation.** This repository contains deterministic, fixture-tested local components for India-market research and paper operations. It will not submit live orders until separately defined data, risk, execution, security and operational gates are approved.
 
 ## Product description
 
@@ -33,23 +33,18 @@ The platform will be **reconciliation-first**. An order intent, broker submissio
 
 ## Repository layout
 
-The documentation-first structure will evolve into the following modules only after the roadmap gates are approved.
+The current local build uses a deliberately small Python structure. Interfaces remain thin and provider/database/UI dependencies stay outside the domain layer.
 
 ```text
 india-algo-platform/
-├── docs/                 # Charter, roadmap, architecture and control decisions
-├── services/
-│   ├── instrument-data/  # Instrument master, session calendar and data lineage
-│   ├── research/         # Strategy specifications, backtest orchestration and evidence
-│   ├── risk/             # Deterministic pre-trade policy and exposure controls
-│   ├── paper-execution/  # Simulated order lifecycle and reconciliation events
-│   └── execution/        # Future, separately approved live execution boundary
-├── packages/
-│   ├── domain/           # Canonical typed domain contracts
-│   ├── event-ledger/     # Durable order/fill/reconciliation event model
-│   └── ui/               # Research and operations user-interface primitives
-├── tests/                # Deterministic fixtures and contract/integration tests
-└── infrastructure/       # Environment, security and deployment-as-code definitions
+├── src/algo_manus/
+│   ├── domain/           # Canonical instruments, data, strategy, risk, paper and operations contracts
+│   ├── application/      # Sync, research, backtest, leaderboard, paper and health use cases
+│   ├── infrastructure/   # Local SQLite repositories, audit trail and future provider ports
+│   ├── strategies/       # Pure, versioned strategy implementations
+│   └── ui/               # Optional thin Streamlit local shell
+├── tests/                # Deterministic fixtures, contracts and local workflow tests
+└── docs/                 # Roadmap, local use, limitations and approval gates
 ```
 
 ## Safety and compliance posture
@@ -58,11 +53,22 @@ This is an engineering and research repository, not a signal-selling, advisory o
 
 ## Current implementation status
 
-The repository now includes the high-level [`docs/ROADMAP.md`](docs/ROADMAP.md), detailed ten-phase [`docs/MASTER_DELIVERY_PLAN.md`](docs/MASTER_DELIVERY_PLAN.md) and implemented [`docs/PHASE_1_FOUNDATION.md`](docs/PHASE_1_FOUNDATION.md). Phase 1 provides the canonical instrument-master and selected-universe foundation without a broker login, market-data request or execution capability.
+The repository now includes the high-level [`docs/ROADMAP.md`](docs/ROADMAP.md), detailed ten-phase [`docs/MASTER_DELIVERY_PLAN.md`](docs/MASTER_DELIVERY_PLAN.md) and implemented [`docs/PHASE_1_FOUNDATION.md`](docs/PHASE_1_FOUNDATION.md). The assembled local foundation includes:
+
+| Local capability | Current implementation boundary |
+|---|---|
+| Instrument master and universes | Immutable broker-normalized snapshot contracts, stale/master-change detection and validated selection. |
+| Market data | Source-aware candle contracts, local SQLite datasets and policy rules that block non-broker data in paper/risk contexts. |
+| Research/backtesting | Versioned parameter revisions, an explicit next-bar-fill SMA reference strategy, cost/slippage assumptions and reproducible specifications. |
+| Multi-security comparison | Persisted experiment batches and core-engine KPI leaderboard projections. |
+| Paper operations | Deterministic risk decision, kill-switch rejection, simulated fill state and append-only local event ledger. |
+| Local operations | Optional disabled-by-default Streamlit shell, audit redaction and health projection. |
+
+All current execution paths use fixtures and local SQLite only. The integrated workflow test proves the local contract flow, not provider or strategy performance.
 
 ## Local MVP workflow and preview
 
-The product-facing local research and paper-trading workflow is documented in [`docs/LOCAL_MVP_WORKFLOW.md`](docs/LOCAL_MVP_WORKFLOW.md). The supporting MVP product flow is in [`docs/MVP_BLUEPRINT.md`](docs/MVP_BLUEPRINT.md), with a browser-openable illustrative sample in [`docs/mvp-preview.html`](docs/mvp-preview.html). These materials define a broker-data-first, source-aware research and paper-operations MVP; they do not add a broker connection or live execution capability.
+The product-facing local research and paper-trading workflow is documented in [`docs/LOCAL_MVP_WORKFLOW.md`](docs/LOCAL_MVP_WORKFLOW.md). The local UI instructions are in [`docs/LOCAL_APP.md`](docs/LOCAL_APP.md), operational controls are in [`docs/LOCAL_OPERATIONS.md`](docs/LOCAL_OPERATIONS.md), current limitations are in [`docs/LOCAL_LIMITATIONS.md`](docs/LOCAL_LIMITATIONS.md), and separately approved next gates are in [`docs/READINESS_GATES.md`](docs/READINESS_GATES.md).
 
 ## Research basis
 
