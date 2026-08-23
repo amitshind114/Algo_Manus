@@ -457,6 +457,11 @@ def _local_evidence_export(st, service, batch, pd) -> None:
             file_name=f"{batch.batch_id}_fixture_evidence_summary.json",
             mime="application/json",
         )
+        st.caption("Offline local verification (no upload or service call):")
+        st.code(
+            "python -m algo_manus.application.evidence_verification path/to/export.json",
+            language="bash",
+        )
         if export.detailed_export_allowed:
             detailed_payload = export.detailed_payload()
             detailed_verification = detailed_payload["verification"]

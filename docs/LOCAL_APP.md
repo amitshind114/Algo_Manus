@@ -27,6 +27,8 @@ The **Reporting & analytics** page also provides a local evidence export for the
 
 Each available local evidence export now includes a schema/version and deterministic SHA-256 content-verification field. The Reporting export view shows copyable values and canonicalization guidance for offline comparison. This is a local content-check aid only; it is not a signature, trusted timestamp, broker confirmation or tamper-proof audit record.
 
+Downloaded local evidence JSON can be checked without uploading it anywhere by running `python -m algo_manus.application.evidence_verification path/to/export.json`. The command returns an explicit valid, mismatch, missing-verification, unsupported-schema or malformed-payload result and never changes local research records. See `docs/LOCAL_EVIDENCE_VERIFIER.md` for supported schemas and limits.
+
 The local strategy catalog is now backed by an explicit in-process registry. The SMA crossover is the only registered reference implementation. Each future strategy must declare versioned metadata, supported instrument types and intervals, a strict parameter schema, risk notes and pure signal behavior. Strategies cannot receive database, provider, broker, UI or execution access; they may not submit orders directly.
 
 The interface cannot authenticate a broker, fetch market data, bypass paper risk policy or enable live execution. Those responsibilities stay in provider adapters and application services, with separate approval gates. After a broker-master and research-data gate is approved, the same workbench controls will move from labelled fixture inputs to validated broker-authoritative instruments and datasets.
