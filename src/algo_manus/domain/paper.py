@@ -7,6 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from algo_manus.domain.risk import OrderIntent, RiskDecision
+from algo_manus.domain.risk_engine import RiskEngineDecision
 
 
 class PaperOrderStatus(StrEnum):
@@ -48,3 +49,4 @@ class PaperEvent:
 class PaperSubmission:
     order: PaperOrder
     decision: RiskDecision
+    central_decision: RiskEngineDecision | None = None

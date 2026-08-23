@@ -66,6 +66,11 @@ class SqlitePaperLedger:
                 ),
             )
 
+    def order_ids(self) -> frozenset[str]:
+        with self._connection() as connection:
+            rows = connection.execute("SELECT DISTINCT order_id FROM paper_events").fetchall()
+        return frozenset(row["order_id"] for row in rows)
+
     def events_for(self, order_id: str) -> tuple[PaperEvent, ...]:
         with self._connection() as connection:
             rows = connection.execute(

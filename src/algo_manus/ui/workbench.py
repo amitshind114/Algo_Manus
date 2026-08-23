@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from algo_manus.application.leaderboard import LeaderboardSort
 
 NAV_ITEMS = (
@@ -309,7 +311,10 @@ def _reporting(st, pd) -> None:
 
 def _paper(st, by_id, pd) -> None:
     from algo_manus.application.paper_execution import PaperExecutionService
+    from algo_manus.domain.instruments import InstrumentStatus
+    from algo_manus.domain.research import DataValidationStatus, DatasetValidationOutcome
     from algo_manus.domain.risk import DeterministicRiskPolicy, OrderIntent, OrderSide, PaperPortfolioSnapshot, RiskLimits
+    from algo_manus.domain.risk_engine import CentralRiskPolicy
 
     _header(st, "Risk & paper operations", "Use the local risk policy, emergency kill switch and paper-event ledger with fixture marks only. No broker request or order is made.")
     batch = st.session_state.active_batch
@@ -328,21 +333,41 @@ def _paper(st, by_id, pd) -> None:
                 def append(self, event):
                     st.session_state.paper_events.append(event)
 
+                def order_ids(self):
+                    return frozenset(event.order_id for event in st.session_state.paper_events)
+
             intent = OrderIntent(
                 order_id=f"fixture-paper-{len(st.session_state.paper_events) + 1}", instrument_id=instrument_id,
                 side=side, quantity=quantity, reference_price=mark, strategy_revision_id=batch.parameter_revision_id,
             )
-            execution = PaperExecutionService(DeterministicRiskPolicy(), SessionLedger())
+            validation = DatasetValidationOutcome(
+                dataset_id=batch.results[0].dataset_id,
+                status=DataValidationStatus.ACCEPTED,
+                policy_version="fixture-paper-context-v1",
+                validated_at=datetime.now(timezone.utc),
+            )
+            execution = PaperExecutionService(
+                DeterministicRiskPolicy(),
+                SessionLedger(),
+                CentralRiskPolicy(
+                    policy_version="fixture-central-risk-v1",
+                    max_quantity_per_order=1_000,
+                    max_notional_per_order=100_000,
+                    max_open_positions=5,
+                ),
+            )
             submission = execution.submit(
                 intent=intent, portfolio=PaperPortfolioSnapshot(cash=100_000, positions={}, realized_pnl=0, session_order_count=0),
                 marks={instrument_id: mark}, limits=RiskLimits(max_gross_notional=250_000, max_notional_per_instrument=100_000, max_session_orders=5, max_daily_loss=10_000),
                 kill_switch_active=st.session_state.paper_kill,
+                instrument_status=InstrumentStatus.ACTIVE,
+                validation_outcome=validation,
             )
             if submission.decision.allowed:
                 execution.fill(submission.order, fill_price=mark)
                 st.success("Fixture order accepted and filled in the local event log.")
             else:
-                st.error(f"Risk rejected fixture order: {submission.decision.code}")
+                st.error(f"Risk {submission.central_decision.decision_type.lower()} fixture order: {submission.decision.code}")
     with right:
         st.subheader("Local paper event ledger")
         if not st.session_state.paper_events:

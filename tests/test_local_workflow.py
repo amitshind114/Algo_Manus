@@ -11,6 +11,8 @@ from algo_manus.application.experiments import BatchBacktestRequest, ExperimentB
 from algo_manus.application.instrument_sync import ResearchUniverseService
 from algo_manus.application.leaderboard import LeaderboardService, LeaderboardSort
 from algo_manus.application.paper_execution import PaperExecutionService
+from algo_manus.domain.instruments import InstrumentStatus
+from algo_manus.domain.research import DataValidationStatus, DatasetValidationOutcome
 from algo_manus.domain.market_data import Candle, CandleDataset, DataProvenance, DataSourceKind, DataUseCase
 from algo_manus.domain.risk import (
     DeterministicRiskPolicy,
@@ -20,6 +22,7 @@ from algo_manus.domain.risk import (
     RiskLimits,
 )
 from algo_manus.domain.strategy import StrategyParameterRevision
+from algo_manus.domain.risk_engine import CentralRiskPolicy
 from algo_manus.infrastructure.experiments.sqlite_repository import SqliteExperimentBatchRepository
 from algo_manus.infrastructure.paper.sqlite_ledger import SqlitePaperLedger
 from algo_manus.infrastructure.research import SqliteResearchEvidenceRepository
@@ -87,7 +90,12 @@ class LocalWorkflowTests(unittest.TestCase):
             )
             rows = LeaderboardService().rows(batch, LeaderboardSort.NET_PNL)
             ledger = SqlitePaperLedger(base / "paper.sqlite3")
-            submission = PaperExecutionService(DeterministicRiskPolicy(), ledger).submit(
+            execution = PaperExecutionService(
+                DeterministicRiskPolicy(),
+                ledger,
+                CentralRiskPolicy("central-local-v1", 100, 2_000, 3),
+            )
+            submission = execution.submit(
                 intent=OrderIntent(
                     order_id="local-workflow-paper-order",
                     instrument_id=instrument_id,
@@ -107,9 +115,16 @@ class LocalWorkflowTests(unittest.TestCase):
                     max_daily_loss=250,
                 ),
                 kill_switch_active=False,
+                instrument_status=InstrumentStatus.ACTIVE,
+                validation_outcome=DatasetValidationOutcome(
+                    dataset_id=dataset.dataset_id,
+                    status=DataValidationStatus.ACCEPTED,
+                    policy_version="research-dataset-v1",
+                    validated_at=start,
+                ),
                 now=start,
             )
-            filled = PaperExecutionService(DeterministicRiskPolicy(), ledger).fill(
+            filled = execution.fill(
                 submission.order, fill_price=101, now=start
             )
 
