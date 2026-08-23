@@ -13,6 +13,10 @@ from algo_manus.domain.paper import PaperEvent, PaperOrderLifecycle, PaperOrderS
 class PaperAuditEventReadPort(Protocol):
     def events(self, limit: int = 1_000) -> tuple[PaperEvent, ...]: ...
 
+    def events_for(self, order_id: str) -> tuple[PaperEvent, ...]: ...
+
+    def order_ids(self) -> frozenset[str]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class LocalPaperOperationAuditRow:
@@ -43,10 +47,14 @@ class PaperOperationAuditTimelineReadService:
     def __init__(self, ledger: PaperAuditEventReadPort) -> None:
         self._ledger = ledger
 
-    def rows(self, limit: int = 1_000) -> tuple[LocalPaperOperationAuditRow, ...]:
+    def rows(
+        self, limit: int = 1_000, order_id: str | None = None
+    ) -> tuple[LocalPaperOperationAuditRow, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         states: dict[str, PaperOrderStatus] = {}
         rows: list[LocalPaperOperationAuditRow] = []
-        for event in self._ledger.events(limit):
+        for event in self._events(limit=limit, order_id=order_id):
             current = states.get(event.order_id, PaperOrderStatus.PENDING_RISK)
             next_state = PaperOrderLifecycle.apply(current, event.event_type)
             lifecycle_state = "UNPROJECTABLE" if next_state is None else next_state.value
@@ -79,6 +87,16 @@ class PaperOperationAuditTimelineReadService:
                 )
             )
         return tuple(rows)
+
+    def _events(self, *, limit: int, order_id: str | None) -> tuple[PaperEvent, ...]:
+        if order_id is None:
+            return self._ledger.events(limit)
+        retained_order_id = order_id.strip()
+        if not retained_order_id:
+            raise ValueError("order_id must not be blank")
+        if retained_order_id not in self._ledger.order_ids():
+            raise ValueError("unknown retained order_id")
+        return self._ledger.events_for(retained_order_id)[:limit]
 
     @staticmethod
     def _payload(serialized: str) -> tuple[dict[str, object], bool]:

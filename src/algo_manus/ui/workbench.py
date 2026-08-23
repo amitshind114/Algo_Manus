@@ -843,11 +843,24 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
             ])
             st.dataframe(frame.iloc[::-1], width="stretch", hide_index=True)
             with st.expander("Read-only local paper-operation audit timeline", expanded=False):
-                audit_rows = paper_audit.rows()
                 st.caption("Chronological retained local paper-event evidence only. It cannot submit, cancel, reconcile, amend, sync or route any order, and it is not broker confirmation.")
-                if not audit_rows:
+                all_audit_rows = paper_audit.rows()
+                if not all_audit_rows:
                     st.info("No retained local paper events are available for audit inspection.")
                 else:
+                    retained_order_ids = sorted({item.order_id for item in all_audit_rows})
+                    selected_audit_order_id = st.selectbox(
+                        "Retained local order scope",
+                        options=["All retained local orders", *retained_order_ids],
+                        help="Changes only the displayed retained local audit rows; it has no paper-operation or broker effect.",
+                    )
+                    audit_rows = (
+                        all_audit_rows
+                        if selected_audit_order_id == "All retained local orders"
+                        else paper_audit.rows(order_id=selected_audit_order_id)
+                    )
+                    if selected_audit_order_id != "All retained local orders":
+                        st.caption(f"Showing retained local audit rows for order `{selected_audit_order_id}` only.")
                     st.dataframe(
                         pd.DataFrame(
                             [

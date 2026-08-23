@@ -115,6 +115,27 @@ class PaperOperationAuditTests(unittest.TestCase):
         self.assertIsNone(row.quantity)
         self.assertIsNone(row.reference_price)
 
+    def test_order_filter_returns_only_requested_retained_order_after_restart(self) -> None:
+        first = self._submit(order_id="paper-audit-first")
+        self.service.fill(first.order, fill_price=101, now=self.now + timedelta(minutes=1))
+        second = self._submit(order_id="paper-audit-second")
+        self.service.cancel(second.order, reason="fixture cancel", now=self.now + timedelta(minutes=2))
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        filtered = restarted.rows(order_id="paper-audit-second")
+
+        self.assertEqual([row.order_id for row in filtered], ["paper-audit-second"] * 3)
+        self.assertEqual([row.lifecycle_state for row in filtered], ["PENDING_RISK", "SUBMITTED", "CANCELLED"])
+
+    def test_order_filter_rejects_blank_or_unknown_order_identifiers(self) -> None:
+        self._submit(order_id="paper-audit-known")
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "order_id"):
+            audit.rows(order_id=" ")
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            audit.rows(order_id="paper-audit-unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

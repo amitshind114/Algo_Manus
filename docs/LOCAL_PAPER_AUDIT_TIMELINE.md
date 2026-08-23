@@ -16,6 +16,10 @@ Phase 8A adds a read-only chronological view of retained events from the local a
 | Research identifiers | Retained promotion-evidence batch, manifest, dataset and validation-policy identifiers when present on the risk-decision event. |
 | Payload valid | Whether the stored event payload has the expected local canonical payload shape. |
 
+## Optional retained-order scope
+
+The workbench may display all retained local audit rows or rows for one selected retained local order ID. Selecting an order changes only the rows displayed. A blank or unknown order ID is rejected by the application read service; neither case changes the local ledger, risk controls, promotion evidence or projected portfolio state.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.
