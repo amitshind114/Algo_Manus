@@ -1,0 +1,110 @@
+"""Read-only local audit rows for durable paper-operation ledger events."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+import json
+from typing import Protocol
+
+from algo_manus.domain.paper import PaperEvent, PaperOrderLifecycle, PaperOrderStatus
+
+
+class PaperAuditEventReadPort(Protocol):
+    def events(self, limit: int = 1_000) -> tuple[PaperEvent, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class LocalPaperOperationAuditRow:
+    event_id: str
+    occurred_at: datetime
+    event_type: str
+    lifecycle_state: str
+    order_id: str
+    instrument_id: str
+    payload_valid: bool
+    side: str | None
+    quantity: int | None
+    reference_price: float | None
+    fill_price: float | None
+    decision_allowed: bool | None
+    decision_code: str | None
+    central_decision_type: str | None
+    central_decision_code: str | None
+    research_batch_id: str | None
+    research_manifest_id: str | None
+    research_dataset_id: str | None
+    research_validation_policy_version: str | None
+
+
+class PaperOperationAuditTimelineReadService:
+    """Interpret retained local ledger events only; it cannot submit, cancel or modify orders."""
+
+    def __init__(self, ledger: PaperAuditEventReadPort) -> None:
+        self._ledger = ledger
+
+    def rows(self, limit: int = 1_000) -> tuple[LocalPaperOperationAuditRow, ...]:
+        states: dict[str, PaperOrderStatus] = {}
+        rows: list[LocalPaperOperationAuditRow] = []
+        for event in self._ledger.events(limit):
+            current = states.get(event.order_id, PaperOrderStatus.PENDING_RISK)
+            next_state = PaperOrderLifecycle.apply(current, event.event_type)
+            lifecycle_state = "UNPROJECTABLE" if next_state is None else next_state.value
+            if next_state is not None:
+                states[event.order_id] = next_state
+            payload, payload_valid = self._payload(event.payload)
+            rows.append(
+                LocalPaperOperationAuditRow(
+                    event_id=event.event_id,
+                    occurred_at=event.occurred_at,
+                    event_type=event.event_type.value,
+                    lifecycle_state=lifecycle_state,
+                    order_id=event.order_id,
+                    instrument_id=event.instrument_id,
+                    payload_valid=payload_valid,
+                    side=self._string(payload, "side"),
+                    quantity=self._positive_int(payload, "quantity"),
+                    reference_price=self._positive_number(payload, "reference_price"),
+                    fill_price=self._positive_number(payload, "fill_price"),
+                    decision_allowed=self._boolean(payload, "allowed"),
+                    decision_code=self._string(payload, "code"),
+                    central_decision_type=self._string(payload, "central_decision_type"),
+                    central_decision_code=self._string(payload, "central_decision_code"),
+                    research_batch_id=self._string(payload, "research_batch_id"),
+                    research_manifest_id=self._string(payload, "research_manifest_id"),
+                    research_dataset_id=self._string(payload, "research_dataset_id"),
+                    research_validation_policy_version=self._string(
+                        payload, "research_validation_policy_version"
+                    ),
+                )
+            )
+        return tuple(rows)
+
+    @staticmethod
+    def _payload(serialized: str) -> tuple[dict[str, object], bool]:
+        try:
+            canonical = json.loads(serialized)
+        except (TypeError, json.JSONDecodeError):
+            return {}, False
+        payload = canonical.get("payload") if isinstance(canonical, dict) else None
+        return (payload, True) if isinstance(payload, dict) else ({}, False)
+
+    @staticmethod
+    def _string(payload: dict[str, object], field: str) -> str | None:
+        value = payload.get(field)
+        return value if isinstance(value, str) and value else None
+
+    @staticmethod
+    def _positive_int(payload: dict[str, object], field: str) -> int | None:
+        value = payload.get(field)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+    @staticmethod
+    def _positive_number(payload: dict[str, object], field: str) -> float | None:
+        value = payload.get(field)
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else None
+
+    @staticmethod
+    def _boolean(payload: dict[str, object], field: str) -> bool | None:
+        value = payload.get(field)
+        return value if isinstance(value, bool) else None

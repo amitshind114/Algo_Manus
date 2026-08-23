@@ -1,0 +1,120 @@
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import tempfile
+import unittest
+
+from algo_manus.application.paper_execution import PaperExecutionService
+from algo_manus.application.paper_audit import PaperOperationAuditTimelineReadService
+from algo_manus.domain.instruments import InstrumentStatus
+from algo_manus.domain.paper import PaperEvent, PaperEventType, PaperPromotionEvidence
+from algo_manus.domain.research import DataValidationStatus, DatasetValidationOutcome
+from algo_manus.domain.risk import (
+    DeterministicRiskPolicy,
+    OrderIntent,
+    OrderSide,
+    PaperPortfolioSnapshot,
+    RiskLimits,
+)
+from algo_manus.domain.risk_engine import CentralRiskPolicy
+from algo_manus.infrastructure.paper.sqlite_ledger import SqlitePaperLedger
+
+
+class PaperOperationAuditTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp_dir.name) / "paper.sqlite3"
+        self.ledger = SqlitePaperLedger(self.path)
+        self.service = PaperExecutionService(
+            DeterministicRiskPolicy(),
+            self.ledger,
+            CentralRiskPolicy("central-audit-v1", 100, 10_000, 10),
+            require_promotion_evidence=True,
+        )
+        self.now = datetime(2026, 8, 23, 9, 30, tzinfo=timezone.utc)
+        self.validation = DatasetValidationOutcome(
+            dataset_id="DATA-paper-audit",
+            status=DataValidationStatus.ACCEPTED,
+            policy_version="research-dataset-v1",
+            validated_at=self.now,
+        )
+        self.portfolio = PaperPortfolioSnapshot(cash=100_000, positions={}, realized_pnl=0, session_order_count=0)
+        self.limits = RiskLimits(200_000, 100_000, 10, 10_000)
+        self.evidence = PaperPromotionEvidence(
+            batch_id="EXP-audit",
+            manifest_id="RUN-audit",
+            dataset_id=self.validation.dataset_id,
+            validation_policy_version=self.validation.policy_version,
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _intent(self, order_id: str) -> OrderIntent:
+        return OrderIntent(
+            order_id=order_id,
+            instrument_id="FIXTURE:NSE:EQ:ALPHA",
+            side=OrderSide.BUY,
+            quantity=5,
+            reference_price=100,
+            strategy_revision_id="PARAM-audit",
+        )
+
+    def _submit(self, *, order_id: str, kill_switch_active: bool = False):
+        return self.service.submit(
+            intent=self._intent(order_id),
+            portfolio=self.portfolio,
+            marks={"FIXTURE:NSE:EQ:ALPHA": 100},
+            limits=self.limits,
+            kill_switch_active=kill_switch_active,
+            instrument_status=InstrumentStatus.ACTIVE,
+            validation_outcome=self.validation,
+            promotion_evidence=self.evidence,
+            now=self.now,
+        )
+
+    def test_empty_ledger_has_no_audit_rows(self) -> None:
+        self.assertEqual(PaperOperationAuditTimelineReadService(self.ledger).rows(), ())
+
+    def test_restart_safe_timeline_exposes_lifecycle_and_promotion_context(self) -> None:
+        filled_submission = self._submit(order_id="paper-audit-filled")
+        self.service.fill(filled_submission.order, fill_price=101, now=self.now + timedelta(minutes=1))
+        cancelled_submission = self._submit(order_id="paper-audit-cancelled")
+        self.service.cancel(cancelled_submission.order, reason="fixture cancel", now=self.now + timedelta(minutes=2))
+        self._submit(order_id="paper-audit-rejected", kill_switch_active=True)
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        rows = restarted.rows()
+        by_order = {row.order_id: [item for item in rows if item.order_id == row.order_id] for row in rows}
+
+        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-filled"]], ["PENDING_RISK", "SUBMITTED", "FILLED"])
+        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-cancelled"]], ["PENDING_RISK", "SUBMITTED", "CANCELLED"])
+        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-rejected"]], ["PENDING_RISK", "REJECTED"])
+        risk_row = by_order["paper-audit-filled"][0]
+        self.assertEqual(risk_row.research_batch_id, "EXP-audit")
+        self.assertEqual(risk_row.research_manifest_id, "RUN-audit")
+        self.assertEqual(by_order["paper-audit-filled"][1].quantity, 5)
+        self.assertEqual(by_order["paper-audit-filled"][-1].fill_price, 101.0)
+
+    def test_malformed_payload_and_invalid_sequence_remain_visible_without_invention(self) -> None:
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-malformed",
+                event_type=PaperEventType.ORDER_FILLED,
+                occurred_at=self.now,
+                order_id="paper-audit-malformed",
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                payload="not-json",
+            )
+        )
+
+        row = PaperOperationAuditTimelineReadService(self.ledger).rows()[0]
+
+        self.assertFalse(row.payload_valid)
+        self.assertEqual(row.lifecycle_state, "UNPROJECTABLE")
+        self.assertIsNone(row.side)
+        self.assertIsNone(row.quantity)
+        self.assertIsNone(row.reference_price)
+
+
+if __name__ == "__main__":
+    unittest.main()

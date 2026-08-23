@@ -684,6 +684,7 @@ def _local_evidence_export(st, service, batch, pd) -> None:
 
 
 def _paper(st, by_id, pd, service, control_service, ledger) -> None:
+    from algo_manus.application.paper_audit import PaperOperationAuditTimelineReadService
     from algo_manus.application.paper_execution import PaperExecutionService
     from algo_manus.application.paper_projection import PaperOperationsReadService
     from algo_manus.application.paper_risk import PaperPortfolioRiskService
@@ -711,6 +712,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         initial_kill_reason="initialized by local fixture workbench",
     )
     paper_operations = PaperOperationsReadService(ledger)
+    paper_audit = PaperOperationAuditTimelineReadService(ledger)
     fixture_starting_cash = 100_000.0
     projection = paper_operations.portfolio(starting_cash=fixture_starting_cash)
     control_left, control_right, control_history = st.columns([0.9, 0.9, 1.45])
@@ -840,6 +842,37 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                 for event in events
             ])
             st.dataframe(frame.iloc[::-1], width="stretch", hide_index=True)
+            with st.expander("Read-only local paper-operation audit timeline", expanded=False):
+                audit_rows = paper_audit.rows()
+                st.caption("Chronological retained local paper-event evidence only. It cannot submit, cancel, reconcile, amend, sync or route any order, and it is not broker confirmation.")
+                if not audit_rows:
+                    st.info("No retained local paper events are available for audit inspection.")
+                else:
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Time": item.occurred_at,
+                                    "Event": item.event_type,
+                                    "Lifecycle state": item.lifecycle_state,
+                                    "Order": item.order_id,
+                                    "Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol if item.instrument_id in by_id else item.instrument_id,
+                                    "Side": item.side or "—",
+                                    "Quantity": item.quantity if item.quantity is not None else "—",
+                                    "Reference price": item.reference_price if item.reference_price is not None else "—",
+                                    "Fill price": item.fill_price if item.fill_price is not None else "—",
+                                    "Decision": item.decision_code or "—",
+                                    "Central gate": item.central_decision_type or "—",
+                                    "Research batch": item.research_batch_id or "—",
+                                    "Research manifest": item.research_manifest_id or "—",
+                                    "Payload valid": item.payload_valid,
+                                }
+                                for item in audit_rows
+                            ]
+                        ),
+                        hide_index=True,
+                        width="stretch",
+                    )
             positions = pd.DataFrame(
                 [
                     {"Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol if item.instrument_id in by_id else item.instrument_id,
