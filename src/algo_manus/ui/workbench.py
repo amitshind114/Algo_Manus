@@ -444,16 +444,30 @@ def _local_evidence_export(st, service, batch, pd) -> None:
             ]
         )
         st.dataframe(status_frame, hide_index=True, width="stretch")
+        summary_payload = export.summary_payload()
+        summary_verification = summary_payload["verification"]
+        st.caption("Summary verification — canonical payload content only; this SHA-256 value is not a signature, broker confirmation or market-data certificate.")
+        st.code(
+            f"{summary_payload['schema']} v{summary_payload['schema_version']}\nsha256: {summary_verification['sha256']}",
+            language="text",
+        )
         st.download_button(
             "Download local evidence summary JSON",
-            data=export.summary_json(),
+            data=json.dumps(summary_payload, indent=2, sort_keys=True),
             file_name=f"{batch.batch_id}_fixture_evidence_summary.json",
             mime="application/json",
         )
         if export.detailed_export_allowed:
+            detailed_payload = export.detailed_payload()
+            detailed_verification = detailed_payload["verification"]
+            st.caption("Detailed verification — compare this SHA-256 with the downloaded local detail JSON using the documented canonicalization method.")
+            st.code(
+                f"{detailed_payload['schema']} v{detailed_payload['schema_version']}\nsha256: {detailed_verification['sha256']}",
+                language="text",
+            )
             st.download_button(
                 "Download integrity-complete local detail JSON",
-                data=export.detailed_json(),
+                data=json.dumps(detailed_payload, indent=2, sort_keys=True),
                 file_name=f"{batch.batch_id}_fixture_evidence_detail.json",
                 mime="application/json",
             )

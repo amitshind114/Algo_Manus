@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 import json
 from typing import Any
 
@@ -58,30 +59,41 @@ class ExperimentEvidenceExport:
     results: tuple[ExperimentResultEvidenceExport, ...]
     _artifact_reader: ExperimentArtifactReadService
 
+    _SUMMARY_SCHEMA = "algo-manus.local-evidence-summary"
+    _DETAIL_SCHEMA = "algo-manus.local-evidence-detail"
+    _SCHEMA_VERSION = 1
+
     @property
     def detailed_export_allowed(self) -> bool:
         return all(result.artifact_integrity.is_complete for result in self.results)
 
     def summary_payload(self) -> dict[str, Any]:
-        return {
-            "export_scope": "local_fixture_experiment_evidence",
-            "fixture_only": True,
-            "not_market_or_broker_evidence": True,
-            "batch_id": self.batch.batch_id,
-            "created_at": self.batch.created_at.isoformat(),
-            "strategy_id": self.batch.strategy_id,
-            "parameter_revision_id": self.batch.parameter_revision_id,
-            "universe_id": self.batch.universe_id,
-            "universe_snapshot_id": self.batch.universe_snapshot_id,
-            "research_manifest_id": self.batch.research_manifest_id,
-            "detailed_export_allowed": self.detailed_export_allowed,
-            "results": [result.summary_payload() for result in self.results],
-        }
+        return self._verified_payload(
+            {
+                "schema": self._SUMMARY_SCHEMA,
+                "schema_version": self._SCHEMA_VERSION,
+                "export_scope": "local_fixture_experiment_evidence",
+                "fixture_only": True,
+                "not_market_or_broker_evidence": True,
+                "batch_id": self.batch.batch_id,
+                "created_at": self.batch.created_at.isoformat(),
+                "strategy_id": self.batch.strategy_id,
+                "parameter_revision_id": self.batch.parameter_revision_id,
+                "universe_id": self.batch.universe_id,
+                "universe_snapshot_id": self.batch.universe_snapshot_id,
+                "research_manifest_id": self.batch.research_manifest_id,
+                "detailed_export_allowed": self.detailed_export_allowed,
+                "results": [result.summary_payload() for result in self.results],
+            }
+        )
 
     def summary_json(self) -> str:
         return json.dumps(self.summary_payload(), indent=2, sort_keys=True)
 
     def detailed_json(self) -> str:
+        return json.dumps(self.detailed_payload(), indent=2, sort_keys=True)
+
+    def detailed_payload(self) -> dict[str, Any]:
         if not self.detailed_export_allowed:
             statuses = ", ".join(
                 f"{result.instrument_id}:{result.artifact_integrity.status.value}"
@@ -121,18 +133,36 @@ class ExperimentEvidenceExport:
                     ],
                 }
             )
-        return json.dumps(
+        return self._verified_payload(
             {
+                "schema": self._DETAIL_SCHEMA,
+                "schema_version": self._SCHEMA_VERSION,
                 "export_scope": "local_fixture_experiment_detail",
                 "fixture_only": True,
                 "not_market_or_broker_evidence": True,
                 "batch_id": self.batch.batch_id,
                 "research_manifest_id": self.batch.research_manifest_id,
                 "results": details,
-            },
-            indent=2,
-            sort_keys=True,
+            }
         )
+
+    @staticmethod
+    def _verified_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        canonical = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+        return {
+            **payload,
+            "verification": {
+                "algorithm": "sha256",
+                "canonicalization": "utf-8 JSON, sort_keys=true, separators=(',', ':'), verification excluded",
+                "sha256": sha256(canonical).hexdigest(),
+            },
+        }
 
 
 class ExperimentEvidenceExportService:

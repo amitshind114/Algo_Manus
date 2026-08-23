@@ -13,6 +13,19 @@ Phase 6D exports **read-only local fixture evidence** for one selected persisted
 
 Both payloads state that they are fixture-only and not market or broker evidence.
 
+## Verification metadata
+
+Every available export includes a schema identifier, schema version and a deterministic SHA-256 verification value. The hash is calculated from the payload **before** its `verification` field is added, using UTF-8 JSON with sorted keys, compact separators (`","` and `":"`) and ASCII escaping. This canonicalization is recorded in the payload’s verification object.
+
+| Field | Example purpose |
+|---|---|
+| `schema` | Distinguishes a local evidence-summary payload from a local evidence-detail payload. |
+| `schema_version` | Lets offline readers identify the payload shape used to calculate the hash. |
+| `verification.algorithm` | Identifies the local content-check algorithm: `sha256`. |
+| `verification.sha256` | Lets a user compare two exports generated from identical local persisted evidence. |
+
+The **Reporting & analytics → Local evidence export** panel shows copyable schema/version and SHA-256 values before each available download. Matching values mean the canonical local payload content matched under this implementation. A changed value means the exported content or payload schema/version changed; it does not identify why.
+
 ## Refusal rules
 
 Detailed evidence export is refused when any selected result is `unavailable`, `incomplete` or `result_spec_mismatch`. The refusal is all-or-nothing for the selected batch: it does not export a partial detail package, attempt to repair rows, or rebuild omitted detail from a backtest. The summary export remains available so a user can inspect the batch, KPI and integrity evidence that caused the refusal.
@@ -24,5 +37,7 @@ Open **Reporting & analytics** and select a persisted batch. The **Local evidenc
 ## Limits
 
 The exported files are not a signed audit record, broker statement, market-data lineage certificate, tax record, reconciliation report, backup service, or proof of strategy performance. The service operates only on local SQLite fixture state and cannot determine whether data outside that local store is correct. No broker SDK, provider credential, network data call, scheduler, cloud synchronization, real paper-broker connection or live-execution feature is included.
+
+The SHA-256 field is a local accidental-change/content-comparison aid, **not** a digital signature, tamper-proof ledger, trusted timestamp, identity assertion, key-management system or external verification service. A person who can modify both the local database and the exported file can produce a new matching hash.
 
 This is research and analysis only, not personalized financial advice.

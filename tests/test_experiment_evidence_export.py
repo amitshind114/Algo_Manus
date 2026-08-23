@@ -59,3 +59,57 @@ class ExperimentEvidenceExportTests(unittest.TestCase):
             self.assertEqual(summary["results"][0]["artifact_integrity"], "result_spec_mismatch")
             with self.assertRaises(EvidenceExportRefusedError):
                 export.detailed_json()
+
+    def test_verification_metadata_is_stable_for_identical_persisted_evidence(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            batch = FixtureWorkbenchService(root).run_experiment(
+                selected_instrument_ids=("FIXTURE:NSE:EQ:ALPHA",),
+                fast_window=3,
+                slow_window=6,
+                initial_cash=100_000,
+                quantity=10,
+                commission_bps=1.0,
+                slippage_bps=1.0,
+            )
+
+            first = FixtureWorkbenchService(root).evidence_export(batch_id=batch.batch_id)
+            second = FixtureWorkbenchService(root).evidence_export(batch_id=batch.batch_id)
+            first_summary = json.loads(first.summary_json())
+            second_summary = json.loads(second.summary_json())
+            first_detail = json.loads(first.detailed_json())
+            second_detail = json.loads(second.detailed_json())
+
+            self.assertEqual(first_summary["schema"], "algo-manus.local-evidence-summary")
+            self.assertEqual(first_summary["schema_version"], 1)
+            self.assertEqual(first_summary["verification"], second_summary["verification"])
+            self.assertEqual(first_detail["verification"], second_detail["verification"])
+            self.assertTrue(first_summary["verification"]["sha256"])
+            self.assertTrue(first_detail["verification"]["sha256"])
+
+    def test_verification_hash_changes_when_exported_detail_changes_without_external_service(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            batch = FixtureWorkbenchService(root).run_experiment(
+                selected_instrument_ids=("FIXTURE:NSE:EQ:ALPHA",),
+                fast_window=3,
+                slow_window=6,
+                initial_cash=100_000,
+                quantity=10,
+                commission_bps=1.0,
+                slippage_bps=1.0,
+            )
+            before = json.loads(
+                FixtureWorkbenchService(root).evidence_export(batch_id=batch.batch_id).detailed_json()
+            )
+            with sqlite3.connect(root / "experiments.sqlite3") as connection:
+                connection.execute(
+                    "UPDATE experiment_equity_points SET equity = equity + 1 WHERE batch_id = ? AND sequence = 0",
+                    (batch.batch_id,),
+                )
+
+            after = json.loads(
+                FixtureWorkbenchService(root).evidence_export(batch_id=batch.batch_id).detailed_json()
+            )
+
+            self.assertNotEqual(before["verification"]["sha256"], after["verification"]["sha256"])
