@@ -75,12 +75,34 @@ class SqliteExperimentBatchRepository:
                     trade_count INTEGER NOT NULL,
                     win_rate_pct REAL NOT NULL,
                     profit_factor REAL,
+                    cagr_pct REAL,
+                    sharpe_ratio REAL,
+                    sortino_ratio REAL,
+                    expectancy REAL,
+                    turnover_pct REAL,
+                    exposure_pct REAL,
+                    average_holding_period_days REAL,
                     data_quality_note TEXT NOT NULL,
                     PRIMARY KEY (batch_id, instrument_id),
                     FOREIGN KEY (batch_id) REFERENCES experiment_batches(batch_id)
                 )
                 """
             )
+            result_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(experiment_results)").fetchall()
+            }
+            for column in (
+                "cagr_pct",
+                "sharpe_ratio",
+                "sortino_ratio",
+                "expectancy",
+                "turnover_pct",
+                "exposure_pct",
+                "average_holding_period_days",
+            ):
+                if column not in result_columns:
+                    connection.execute(f"ALTER TABLE experiment_results ADD COLUMN {column} REAL")
 
     def save(self, batch: ExperimentBatch) -> None:
         with self._connection() as connection:
@@ -108,8 +130,9 @@ class SqliteExperimentBatchRepository:
                 INSERT INTO experiment_results
                 (batch_id, instrument_id, dataset_id, spec_id, initial_cash, quantity,
                  commission_bps, slippage_bps, force_close_at_end, net_pnl, total_return_pct,
-                 max_drawdown_pct, trade_count, win_rate_pct, profit_factor, data_quality_note)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 max_drawdown_pct, trade_count, win_rate_pct, profit_factor, cagr_pct, sharpe_ratio,
+                 sortino_ratio, expectancy, turnover_pct, exposure_pct, average_holding_period_days, data_quality_note)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -128,6 +151,13 @@ class SqliteExperimentBatchRepository:
                         item.backtest.metrics.trade_count,
                         item.backtest.metrics.win_rate_pct,
                         item.backtest.metrics.profit_factor,
+                        item.backtest.metrics.cagr_pct,
+                        item.backtest.metrics.sharpe_ratio,
+                        item.backtest.metrics.sortino_ratio,
+                        item.backtest.metrics.expectancy,
+                        item.backtest.metrics.turnover_pct,
+                        item.backtest.metrics.exposure_pct,
+                        item.backtest.metrics.average_holding_period_days,
                         item.data_quality_note,
                     )
                     for item in batch.results
@@ -166,6 +196,13 @@ class SqliteExperimentBatchRepository:
                         trade_count=row["trade_count"],
                         win_rate_pct=row["win_rate_pct"],
                         profit_factor=row["profit_factor"],
+                        cagr_pct=row["cagr_pct"],
+                        sharpe_ratio=row["sharpe_ratio"],
+                        sortino_ratio=row["sortino_ratio"],
+                        expectancy=row["expectancy"],
+                        turnover_pct=row["turnover_pct"],
+                        exposure_pct=row["exposure_pct"],
+                        average_holding_period_days=row["average_holding_period_days"],
                     ),
                 ),
                 data_quality_note=row["data_quality_note"],

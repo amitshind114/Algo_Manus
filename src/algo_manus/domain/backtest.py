@@ -74,6 +74,29 @@ class BacktestMetrics:
     trade_count: int
     win_rate_pct: float
     profit_factor: float | None
+    cagr_pct: float | None = None
+    sharpe_ratio: float | None = None
+    sortino_ratio: float | None = None
+    expectancy: float | None = None
+    turnover_pct: float | None = None
+    exposure_pct: float | None = None
+    average_holding_period_days: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BacktestDrawdownPoint:
+    """One immutable point on an equity-derived drawdown curve."""
+
+    timestamp: datetime
+    equity: float
+    peak_equity: float
+    drawdown_pct: float
+
+    def __post_init__(self) -> None:
+        if self.timestamp.tzinfo is None:
+            raise ValueError("drawdown timestamp must be timezone-aware")
+        if self.equity < 0 or self.peak_equity <= 0 or self.drawdown_pct < 0:
+            raise ValueError("drawdown point values are invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,3 +105,4 @@ class BacktestResult:
     trades: tuple[BacktestTrade, ...]
     equity_curve: tuple[tuple[datetime, float], ...]
     metrics: BacktestMetrics
+    drawdown_curve: tuple[BacktestDrawdownPoint, ...] = ()

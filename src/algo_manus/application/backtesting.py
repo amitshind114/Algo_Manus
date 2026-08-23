@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from math import sqrt
+from statistics import fmean, pstdev
 from typing import Sequence
 
 from algo_manus.domain.backtest import (
+    BacktestDrawdownPoint,
     BacktestMetrics,
     BacktestResult,
     BacktestSpec,
@@ -54,7 +58,8 @@ class BarBacktestService:
         cash = spec.initial_cash
         position: _OpenPosition | None = None
         trades: list[BacktestTrade] = []
-        equity_curve: list[tuple[object, float]] = []
+        equity_curve: list[tuple[datetime, float]] = []
+        exposure_points = 0
 
         for index in range(strategy.required_history(parameters.parameters), len(candles) - 1):
             history = candles[: index + 1]
@@ -73,6 +78,7 @@ class BarBacktestService:
 
             marked_equity = cash + (position.quantity * next_candle.close if position else 0.0)
             equity_curve.append((next_candle.timestamp, marked_equity))
+            exposure_points += int(position is not None)
 
         if position is not None and spec.force_close_at_end:
             final_candle = candles[-1]
@@ -80,12 +86,20 @@ class BarBacktestService:
             trades.append(trade)
             equity_curve.append((final_candle.timestamp, cash))
 
-        metrics = self._metrics(spec.initial_cash, cash, trades, equity_curve)
+        metrics = self._metrics(
+            spec.initial_cash,
+            cash,
+            trades,
+            equity_curve,
+            exposure_points=exposure_points,
+            annualization_periods=252 if dataset.interval == "1d" else None,
+        )
         return BacktestResult(
             spec=spec,
             trades=tuple(trades),
             equity_curve=tuple(equity_curve),
             metrics=metrics,
+            drawdown_curve=self._drawdown_curve(spec.initial_cash, equity_curve),
         )
 
     @staticmethod
@@ -118,7 +132,15 @@ class BarBacktestService:
         return price * quantity * commission_bps / 10_000
 
     @staticmethod
-    def _metrics(initial_cash: float, final_cash: float, trades: Sequence[BacktestTrade], equity_curve):
+    def _metrics(
+        initial_cash: float,
+        final_cash: float,
+        trades: Sequence[BacktestTrade],
+        equity_curve: Sequence[tuple[datetime, float]],
+        *,
+        exposure_points: int,
+        annualization_periods: int | None,
+    ) -> BacktestMetrics:
         net_pnl = final_cash - initial_cash
         total_return_pct = (net_pnl / initial_cash) * 100
         peak = initial_cash
@@ -131,6 +153,24 @@ class BarBacktestService:
         losses = [trade for trade in trades if trade.net_pnl < 0]
         loss_total = abs(sum(trade.net_pnl for trade in losses))
         profit_factor = sum(trade.net_pnl for trade in wins) / loss_total if loss_total else None
+        returns = BarBacktestService._equity_returns(initial_cash, equity_curve)
+        cagr_pct = BarBacktestService._cagr_pct(initial_cash, final_cash, equity_curve)
+        sharpe_ratio = BarBacktestService._sharpe_ratio(returns, annualization_periods)
+        sortino_ratio = BarBacktestService._sortino_ratio(returns, annualization_periods)
+        expectancy = fmean(trade.net_pnl for trade in trades) if trades else None
+        turnover_pct = (
+            sum((trade.entry_price + trade.exit_price) * trade.quantity for trade in trades)
+            / initial_cash
+            * 100
+            if trades
+            else 0.0
+        )
+        exposure_pct = (exposure_points / len(equity_curve) * 100) if equity_curve else None
+        average_holding_period_days = (
+            fmean((trade.exit_time - trade.entry_time).total_seconds() / 86_400 for trade in trades)
+            if trades
+            else None
+        )
         return BacktestMetrics(
             net_pnl=net_pnl,
             total_return_pct=total_return_pct,
@@ -138,4 +178,70 @@ class BarBacktestService:
             trade_count=len(trades),
             win_rate_pct=(len(wins) / len(trades) * 100) if trades else 0.0,
             profit_factor=profit_factor,
+            cagr_pct=cagr_pct,
+            sharpe_ratio=sharpe_ratio,
+            sortino_ratio=sortino_ratio,
+            expectancy=expectancy,
+            turnover_pct=turnover_pct,
+            exposure_pct=exposure_pct,
+            average_holding_period_days=average_holding_period_days,
         )
+
+    @staticmethod
+    def _drawdown_curve(
+        initial_cash: float, equity_curve: Sequence[tuple[datetime, float]]
+    ) -> tuple[BacktestDrawdownPoint, ...]:
+        peak = initial_cash
+        points: list[BacktestDrawdownPoint] = []
+        for timestamp, equity in equity_curve:
+            peak = max(peak, equity)
+            drawdown_pct = ((peak - equity) / peak) * 100 if peak else 0.0
+            points.append(
+                BacktestDrawdownPoint(
+                    timestamp=timestamp,
+                    equity=equity,
+                    peak_equity=peak,
+                    drawdown_pct=drawdown_pct,
+                )
+            )
+        return tuple(points)
+
+    @staticmethod
+    def _equity_returns(
+        initial_cash: float, equity_curve: Sequence[tuple[datetime, float]]
+    ) -> tuple[float, ...]:
+        previous = initial_cash
+        returns: list[float] = []
+        for _, equity in equity_curve:
+            if previous <= 0:
+                return ()
+            returns.append((equity / previous) - 1)
+            previous = equity
+        return tuple(returns)
+
+    @staticmethod
+    def _cagr_pct(
+        initial_cash: float, final_cash: float, equity_curve: Sequence[tuple[datetime, float]]
+    ) -> float | None:
+        if len(equity_curve) < 2 or initial_cash <= 0 or final_cash <= 0:
+            return None
+        duration_days = (equity_curve[-1][0] - equity_curve[0][0]).total_seconds() / 86_400
+        if duration_days < 365:
+            return None
+        years = duration_days / 365.25
+        return ((final_cash / initial_cash) ** (1 / years) - 1) * 100
+
+    @staticmethod
+    def _sharpe_ratio(returns: Sequence[float], annualization_periods: int | None) -> float | None:
+        if annualization_periods is None or len(returns) < 2:
+            return None
+        deviation = pstdev(returns)
+        return (fmean(returns) / deviation * sqrt(annualization_periods)) if deviation else None
+
+    @staticmethod
+    def _sortino_ratio(returns: Sequence[float], annualization_periods: int | None) -> float | None:
+        if annualization_periods is None or len(returns) < 2:
+            return None
+        downside = tuple(min(item, 0.0) for item in returns)
+        downside_deviation = sqrt(fmean(item * item for item in downside))
+        return (fmean(returns) / downside_deviation * sqrt(annualization_periods)) if downside_deviation else None
