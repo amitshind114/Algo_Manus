@@ -171,6 +171,7 @@ def _overview(st, service, pd) -> None:
             st.caption(f"Snapshot: {batch.universe_snapshot_id}")
     with st.expander("Local evidence lifecycle", expanded=False):
         lifecycle = service.evidence_lifecycle()
+        health = service.evidence_health()
         st.caption("Read-only local fixture-store visibility. No cleanup, deletion, compaction, backup or cloud synchronization action is available here.")
         first, second, third = st.columns(3)
         first.metric("Store", "Local SQLite" if lifecycle.is_persistent else "In-memory fixture")
@@ -180,6 +181,10 @@ def _overview(st, service, pd) -> None:
         artifact_left.metric("Stored results", lifecycle.result_count)
         artifact_middle.metric("Artifact headers", lifecycle.artifact_count)
         artifact_right.metric("Completed local trades", lifecycle.completed_trade_count)
+        health_left, health_middle, health_right = st.columns(3)
+        health_left.metric("Integrity-complete results", health.complete_count)
+        health_middle.metric("Results needing attention", health.non_complete_count)
+        health_right.metric("Results checked", health.total_result_count)
         st.dataframe(
             pd.DataFrame(
                 [
@@ -193,7 +198,19 @@ def _overview(st, service, pd) -> None:
             hide_index=True,
             width="stretch",
         )
-        st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness.")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"Artifact health status": "Complete", "Retained results": health.complete_count},
+                    {"Artifact health status": "Unavailable", "Retained results": health.unavailable_count},
+                    {"Artifact health status": "Incomplete", "Retained results": health.incomplete_count},
+                    {"Artifact health status": "Result-spec mismatch", "Retained results": health.result_spec_mismatch_count},
+                ]
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness, and they do not repair any result.")
 
 
 def _data_and_instruments(st, instruments, by_id, pd) -> None:

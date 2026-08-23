@@ -20,6 +20,7 @@ from algo_manus.application.experiment_export import (
     ExperimentEvidenceExportService,
 )
 from algo_manus.application.evidence_lifecycle import LocalEvidenceLifecycle, LocalEvidenceLifecycleReadService
+from algo_manus.application.evidence_health import LocalEvidenceHealth, LocalEvidenceHealthReadService
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -135,6 +136,16 @@ class _MemoryExperimentRepository:
             newest_batch_created_at=max(created_at) if created_at else None,
             max_equity_points_per_result=None,
             max_trades_per_result=None,
+        )
+
+    def evidence_health_snapshot(self) -> LocalEvidenceHealth:
+        results = tuple(result for batch in self._batches.values() for result in batch.results)
+        return LocalEvidenceHealth(
+            total_result_count=len(results),
+            complete_count=len(results),
+            unavailable_count=0,
+            incomplete_count=0,
+            result_spec_mismatch_count=0,
         )
 
 
@@ -274,6 +285,11 @@ class FixtureWorkbenchService:
         """Return local store metadata only; no cleanup or retention action is performed."""
 
         return LocalEvidenceLifecycleReadService(self._batches).snapshot()
+
+    def evidence_health(self) -> LocalEvidenceHealth:
+        """Return aggregate local artifact status only; no records are repaired or changed."""
+
+        return LocalEvidenceHealthReadService(self._batches).snapshot()
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):

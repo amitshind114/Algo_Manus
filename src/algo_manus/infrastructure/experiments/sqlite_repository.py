@@ -14,6 +14,7 @@ from algo_manus.application.experiments import (
     ExperimentResultArtifacts,
 )
 from algo_manus.application.evidence_lifecycle import LocalEvidenceLifecycle
+from algo_manus.application.evidence_health import LocalEvidenceHealth
 from algo_manus.domain.backtest import BacktestMetrics, BacktestResult, BacktestSpec, BacktestTrade
 from algo_manus.domain.experiment import (
     ExperimentBatch,
@@ -525,6 +526,41 @@ class SqliteExperimentBatchRepository:
             ),
             max_equity_points_per_result=self._max_equity_points_per_result,
             max_trades_per_result=self._max_trades_per_result,
+        )
+
+    def evidence_health_snapshot(self) -> LocalEvidenceHealth:
+        """Aggregate local artifact status without repairing or changing any evidence rows."""
+
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT r.batch_id, r.instrument_id, r.spec_id,
+                       a.result_spec_id, a.trade_count, a.equity_point_count,
+                       (SELECT COUNT(*) FROM experiment_trades t
+                        WHERE t.batch_id = r.batch_id AND t.instrument_id = r.instrument_id),
+                       (SELECT COUNT(*) FROM experiment_equity_points p
+                        WHERE p.batch_id = r.batch_id AND p.instrument_id = r.instrument_id)
+                FROM experiment_results r
+                LEFT JOIN experiment_result_artifacts a
+                  ON a.batch_id = r.batch_id AND a.instrument_id = r.instrument_id
+                """
+            ).fetchall()
+        complete = unavailable = incomplete = mismatch = 0
+        for row in rows:
+            if row[3] is None:
+                unavailable += 1
+            elif row[2] != row[3]:
+                mismatch += 1
+            elif row[4] != row[6] or row[5] != row[7]:
+                incomplete += 1
+            else:
+                complete += 1
+        return LocalEvidenceHealth(
+            total_result_count=len(rows),
+            complete_count=complete,
+            unavailable_count=unavailable,
+            incomplete_count=incomplete,
+            result_spec_mismatch_count=mismatch,
         )
 
     def _validate_artifact_bounds(self, batch: ExperimentBatch) -> None:
