@@ -1,0 +1,52 @@
+# Research Manifests, Data Lineage and Validation Evidence
+
+## Scope
+
+Phase 2A defines the immutable evidence contracts that future backtests and experiments must carry. It does not fetch data, add a provider, modify the existing experiment runner, change fixture behavior or mark any strategy as paper-eligible.
+
+## Research-run manifest
+
+`ResearchRunManifest` is the durable vocabulary for a reproducible multi-security research run. Its deterministic `manifest_id` changes only when reproducibility-relevant evidence changes; its creation timestamp intentionally does not change the identity.
+
+| Evidence group | Manifest fields |
+|---|---|
+| Strategy evidence | Strategy ID, semantic version and immutable parameter revision ID. |
+| Universe evidence | Universe ID and pinned instrument-master snapshot ID. |
+| Data evidence | Dataset ID, instrument, interval, provider/source identity, source URI, retrieval time, raw-content checksum, adjustment basis and permitted use case. |
+| Quality evidence | Exactly one named validation outcome for each dataset, including policy version and issues. |
+| Engine evidence | Engine version, starting cash, quantity, commission/slippage, force-close rule and execution-timing policy. |
+| Time evidence | Start, end, information cutoff and a creation timestamp; all timestamps are timezone-aware. |
+| Code evidence | Optional lower-case Git commit identifier when the source revision is known. |
+
+The manifest accepts only `RESEARCH` datasets and only validation outcomes with status `ACCEPTED`. A quarantined or rejected dataset cannot be silently included in a research manifest.
+
+## Dataset lineage
+
+`DatasetLineage` is derived from the existing immutable `CandleDataset` and `DataProvenance` contracts. It does not copy bars or provider client state. Its purpose is to preserve the data evidence required to explain a future result without allowing a UI screen to substitute a source or invent a freshness status.
+
+| Data validation status | Meaning | Research manifest eligibility |
+|---|---|---|
+| `ACCEPTED` | The declared policy completed without an error-severity issue. | Eligible. |
+| `QUARANTINED` | A named issue requires review; no silent promotion is permitted. | Not eligible. |
+| `REJECTED` | The policy found an invalid or disallowed dataset. | Not eligible. |
+
+Each issue carries a stable code, severity and human-readable message. An accepted outcome cannot contain an error-severity issue, and a non-accepted outcome must name at least one issue.
+
+## Storage boundary
+
+Phase 2A provides `ResearchRunManifestRepository` and `DatasetValidationRepository` ports only. It intentionally adds no database table and no implementation. A later persistence phase can implement the ports using SQLite first, preserving the current Windows-safe connection discipline, then add another storage engine without changing the domain evidence model.
+
+## What this phase does not claim
+
+The presence of a manifest does not prove data quality, profitability, robustness, paper eligibility or live readiness. Fixture datasets remain clearly labelled fixtures. Real provider/adaptor work, point-in-time source availability, portfolio allocation, walk-forward validation and promotion gates require separately approved future phases.
+
+## Validation
+
+```bash
+make lint
+make test
+```
+
+The contract suite verifies deterministic IDs across different creation times, rejects non-research/quarantined/rejected inputs and blocks a validation outcome that attempts to silently accept an error.
+
+This is research and analysis only, not personalized financial advice.
