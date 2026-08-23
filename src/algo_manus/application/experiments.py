@@ -9,6 +9,10 @@ import json
 from typing import Mapping, Protocol
 
 from algo_manus.application.backtesting import BarBacktestService
+from algo_manus.application.dataset_validation import (
+    ResearchDatasetValidationError,
+    ResearchDatasetValidator,
+)
 from algo_manus.domain.backtest import BacktestResult, BacktestSpec
 from algo_manus.domain.experiment import (
     ExperimentBatch,
@@ -52,17 +56,17 @@ class ExperimentBatchService:
     """Runs one strategy revision under identical assumptions across a universe."""
 
     _ENGINE_VERSION = "bar-backtest-v1"
-    _VALIDATION_POLICY_VERSION = "research-contract-v1"
-
     def __init__(
         self,
         backtester: BarBacktestService,
         repository: ExperimentBatchRepository,
         manifest_repository: ResearchRunManifestRepository,
+        validator: ResearchDatasetValidator | None = None,
     ) -> None:
         self._backtester = backtester
         self._repository = repository
         self._manifest_repository = manifest_repository
+        self._validator = validator or ResearchDatasetValidator()
 
     def run(
         self,
@@ -111,7 +115,16 @@ class ExperimentBatchService:
             sort_keys=True,
             separators=(",", ":"),
         )
-        manifest = self._manifest(request, strategy, parameters, datasets, timestamp)
+        validations = tuple(
+            self._validator.validate(dataset, validated_at=timestamp) for dataset in datasets
+        )
+        rejected = tuple(outcome for outcome in validations if not outcome.research_eligible)
+        if rejected:
+            codes = ", ".join(
+                f"{outcome.dataset_id}:{outcome.status.value}" for outcome in rejected
+            )
+            raise ResearchDatasetValidationError(f"research dataset validation did not accept: {codes}")
+        manifest = self._manifest(request, strategy, parameters, datasets, validations, timestamp)
         self._manifest_repository.save(manifest)
         batch = ExperimentBatch(
             batch_id=f"EXP-{sha256(canonical.encode()).hexdigest()[:20]}",
@@ -142,20 +155,12 @@ class ExperimentBatchService:
         strategy: Strategy,
         parameters: StrategyParameterRevision,
         datasets: tuple[CandleDataset, ...],
+        validations: tuple[DatasetValidationOutcome, ...],
         created_at: datetime,
     ) -> ResearchRunManifest:
         """Construct evidence from already-validated local research inputs only."""
 
         lineages = tuple(DatasetLineage.from_dataset(dataset) for dataset in datasets)
-        validations = tuple(
-            DatasetValidationOutcome(
-                dataset_id=lineage.dataset_id,
-                status=DataValidationStatus.ACCEPTED,
-                policy_version=self._VALIDATION_POLICY_VERSION,
-                validated_at=created_at,
-            )
-            for lineage in lineages
-        )
         timestamps = tuple(candle.timestamp for dataset in datasets for candle in dataset.candles)
         return ResearchRunManifest(
             universe_id=request.universe_id,
