@@ -50,19 +50,25 @@ class PaperOperationAuditTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def _intent(self, order_id: str) -> OrderIntent:
+    def _intent(self, order_id: str, side: OrderSide = OrderSide.BUY) -> OrderIntent:
         return OrderIntent(
             order_id=order_id,
             instrument_id="FIXTURE:NSE:EQ:ALPHA",
-            side=OrderSide.BUY,
+            side=side,
             quantity=5,
             reference_price=100,
             strategy_revision_id="PARAM-audit",
         )
 
-    def _submit(self, *, order_id: str, kill_switch_active: bool = False):
+    def _submit(
+        self,
+        *,
+        order_id: str,
+        side: OrderSide = OrderSide.BUY,
+        kill_switch_active: bool = False,
+    ):
         return self.service.submit(
-            intent=self._intent(order_id),
+            intent=self._intent(order_id, side),
             portfolio=self.portfolio,
             marks={"FIXTURE:NSE:EQ:ALPHA": 100},
             limits=self.limits,
@@ -321,6 +327,7 @@ class PaperOperationAuditTests(unittest.TestCase):
             integrity_filter="VALID",
             event_type_filter="ORDER_FILLED",
             instrument_id_filter="FIXTURE:NSE:EQ:ALPHA",
+            side_filter="BUY",
             start_time=fill_time,
             end_time=fill_time,
         )
@@ -329,12 +336,14 @@ class PaperOperationAuditTests(unittest.TestCase):
         self.assertEqual(all_summary.integrity_scope, "ALL")
         self.assertEqual(all_summary.event_type_scope, "ALL")
         self.assertEqual(all_summary.instrument_scope, "ALL")
+        self.assertEqual(all_summary.side_scope, "ALL")
         self.assertIsNone(all_summary.start_time)
         self.assertIsNone(all_summary.end_time)
         self.assertEqual(scoped_summary.order_scope, "paper-audit-filter-summary")
         self.assertEqual(scoped_summary.integrity_scope, "VALID")
         self.assertEqual(scoped_summary.event_type_scope, "ORDER_FILLED")
         self.assertEqual(scoped_summary.instrument_scope, "FIXTURE:NSE:EQ:ALPHA")
+        self.assertEqual(scoped_summary.side_scope, "BUY")
         self.assertEqual(scoped_summary.start_time, fill_time)
         self.assertEqual(scoped_summary.end_time, fill_time)
 
@@ -417,6 +426,33 @@ class PaperOperationAuditTests(unittest.TestCase):
             audit.row_detail(" ")
         with self.assertRaisesRegex(ValueError, "unknown"):
             audit.row_detail("EVT-audit-row-detail-unknown")
+
+    def test_payload_side_filter_scopes_buy_and_sell_rows_after_restart(self) -> None:
+        self._submit(order_id="paper-audit-side-buy", side=OrderSide.BUY)
+        self._submit(order_id="paper-audit-side-sell", side=OrderSide.SELL)
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        all_rows = restarted.rows()
+        buy_rows = restarted.rows(side_filter="BUY")
+        sell_rows = restarted.rows(side_filter="SELL")
+        buy_summary = restarted.filter_summary(side_filter="BUY")
+        sell_summary = restarted.filter_summary(side_filter="SELL")
+
+        self.assertGreater(len(all_rows), len(buy_rows))
+        self.assertGreater(len(buy_rows), 0)
+        self.assertGreater(len(sell_rows), 0)
+        self.assertEqual({row.side for row in buy_rows}, {"BUY"})
+        self.assertEqual({row.side for row in sell_rows}, {"SELL"})
+        self.assertEqual(buy_summary.side_scope, "BUY")
+        self.assertEqual(sell_summary.side_scope, "SELL")
+
+    def test_payload_side_filter_rejects_blank_or_unknown_values(self) -> None:
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "side_filter"):
+            audit.rows(side_filter=" ")
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            audit.rows(side_filter="HOLD")
 
 
 if __name__ == "__main__":

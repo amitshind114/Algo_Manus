@@ -907,6 +907,16 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         "Cancellations": "ORDER_CANCELLED",
                         "Rejections": "ORDER_REJECTED",
                     }[selected_event_type_scope]
+                    selected_side_scope = st.selectbox(
+                        "Retained local payload side",
+                        options=["All retained payload sides", "Buy payload side", "Sell payload side"],
+                        help="Changes only the displayed retained local audit rows by their already-interpreted payload side; it cannot alter lifecycle, paper-operation or broker state.",
+                    )
+                    side_filter = {
+                        "All retained payload sides": "ALL",
+                        "Buy payload side": "BUY",
+                        "Sell payload side": "SELL",
+                    }[selected_side_scope]
                     retained_instrument_ids = sorted({item.instrument_id for item in all_audit_rows})
                     selected_instrument_id = st.selectbox(
                         "Retained local instrument scope",
@@ -968,6 +978,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             integrity_filter=integrity_filter,
                             event_type_filter=event_type_filter,
                             instrument_id_filter=instrument_id_filter,
+                            side_filter=side_filter,
                             start_time=start_time,
                             end_time=end_time,
                         )
@@ -976,6 +987,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             integrity_filter=integrity_filter,
                             event_type_filter=event_type_filter,
                             instrument_id_filter=instrument_id_filter,
+                            side_filter=side_filter,
                             start_time=start_time,
                             end_time=end_time,
                         )
@@ -984,6 +996,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             integrity_filter=integrity_filter,
                             event_type_filter=event_type_filter,
                             instrument_id_filter=instrument_id_filter,
+                            side_filter=side_filter,
                             start_time=start_time,
                             end_time=end_time,
                         )
@@ -995,6 +1008,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                                     {"Filter": "Retained order", "Active local scope": filter_summary.order_scope},
                                     {"Filter": "Integrity", "Active local scope": filter_summary.integrity_scope},
                                     {"Filter": "Event type", "Active local scope": filter_summary.event_type_scope},
+                                    {"Filter": "Retained payload side", "Active local scope": filter_summary.side_scope},
                                     {"Filter": "Retained instrument", "Active local scope": filter_summary.instrument_scope},
                                     {
                                         "Filter": "UTC start (inclusive)",
@@ -1022,6 +1036,8 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         st.caption(f"Showing `{selected_integrity_scope.lower()}` within the selected local audit scope.")
                     if selected_event_type_scope != "All retained event types":
                         st.caption(f"Showing `{selected_event_type_scope.lower()}` within the selected local audit scope.")
+                    if selected_side_scope != "All retained payload sides":
+                        st.caption(f"Showing `{selected_side_scope.lower()}` within the selected local audit scope.")
                     if selected_instrument_id != "All retained local instruments":
                         st.caption(f"Showing retained local audit rows for instrument `{selected_instrument_id}` only.")
                     if time_window_enabled and not invalid_time_window:

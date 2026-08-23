@@ -56,6 +56,7 @@ class LocalPaperOperationAuditFilterSummary:
     integrity_scope: str
     event_type_scope: str
     instrument_scope: str
+    side_scope: str
     start_time: datetime | None
     end_time: datetime | None
 
@@ -93,6 +94,7 @@ class PaperOperationAuditTimelineReadService:
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
         instrument_id_filter: str | None = None,
+        side_filter: str | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
     ) -> tuple[LocalPaperOperationAuditRow, ...]:
@@ -100,6 +102,7 @@ class PaperOperationAuditTimelineReadService:
             raise ValueError("limit must be positive")
         integrity_scope = self._integrity_scope(integrity_filter)
         event_type_scope = self._event_type_scope(event_type_filter)
+        side_scope = self._side_scope(side_filter)
         time_window = self._time_window(start_time, end_time)
         states: dict[str, PaperOrderStatus] = {}
         rows: list[LocalPaperOperationAuditRow] = []
@@ -143,6 +146,7 @@ class PaperOperationAuditTimelineReadService:
             if self._matches_integrity_scope(row, integrity_scope)
             and self._matches_event_type_scope(row, event_type_scope)
             and self._matches_instrument_scope(row, instrument_scope)
+            and self._matches_side_scope(row, side_scope)
             and self._matches_time_window(row, time_window)
         )
 
@@ -153,6 +157,7 @@ class PaperOperationAuditTimelineReadService:
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
         instrument_id_filter: str | None = None,
+        side_filter: str | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
     ) -> LocalPaperOperationAuditIntegritySummary:
@@ -162,6 +167,7 @@ class PaperOperationAuditTimelineReadService:
             integrity_filter=integrity_filter,
             event_type_filter=event_type_filter,
             instrument_id_filter=instrument_id_filter,
+            side_filter=side_filter,
             start_time=start_time,
             end_time=end_time,
         )
@@ -179,6 +185,7 @@ class PaperOperationAuditTimelineReadService:
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
         instrument_id_filter: str | None = None,
+        side_filter: str | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
     ) -> LocalPaperOperationAuditFilterSummary:
@@ -189,6 +196,7 @@ class PaperOperationAuditTimelineReadService:
             integrity_scope=self._integrity_scope(integrity_filter),
             event_type_scope=self._event_type_scope(event_type_filter),
             instrument_scope=self._instrument_scope(instrument_id_filter, list(raw_rows)),
+            side_scope=self._side_scope(side_filter),
             start_time=time_window[0],
             end_time=time_window[1],
         )
@@ -284,6 +292,21 @@ class PaperOperationAuditTimelineReadService:
     @staticmethod
     def _matches_instrument_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
         return scope == "ALL" or row.instrument_id == scope
+
+    @staticmethod
+    def _side_scope(side_filter: str | None) -> str:
+        if side_filter is None:
+            return "ALL"
+        normalized = side_filter.strip().upper()
+        if not normalized:
+            raise ValueError("side_filter must not be blank")
+        if normalized not in {"ALL", "BUY", "SELL"}:
+            raise ValueError("unknown side_filter")
+        return normalized
+
+    @staticmethod
+    def _matches_side_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
+        return scope == "ALL" or row.side == scope
 
     @staticmethod
     def _time_window(
