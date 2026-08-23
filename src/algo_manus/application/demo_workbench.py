@@ -21,6 +21,10 @@ from algo_manus.application.experiment_export import (
 )
 from algo_manus.application.evidence_lifecycle import LocalEvidenceLifecycle, LocalEvidenceLifecycleReadService
 from algo_manus.application.evidence_health import LocalEvidenceHealth, LocalEvidenceHealthReadService
+from algo_manus.application.evidence_health_detail import (
+    LocalEvidenceHealthDetail,
+    LocalEvidenceHealthDetailReadService,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -146,6 +150,24 @@ class _MemoryExperimentRepository:
             unavailable_count=0,
             incomplete_count=0,
             result_spec_mismatch_count=0,
+        )
+
+    def evidence_health_details(self) -> tuple[LocalEvidenceHealthDetail, ...]:
+        return tuple(
+            LocalEvidenceHealthDetail(
+                batch_id=batch.batch_id,
+                instrument_id=result.instrument_id,
+                created_at=batch.created_at,
+                status=ExperimentArtifactIntegrityStatus.COMPLETE,
+                result_spec_id=result.backtest.spec.spec_id,
+                artifact_result_spec_id=result.backtest.spec.spec_id,
+                expected_trade_count=len(result.backtest.trades),
+                actual_trade_count=len(result.backtest.trades),
+                expected_equity_point_count=len(result.backtest.equity_curve),
+                actual_equity_point_count=len(result.backtest.equity_curve),
+            )
+            for batch in sorted(self._batches.values(), key=lambda item: item.created_at, reverse=True)
+            for result in batch.results
         )
 
 
@@ -290,6 +312,11 @@ class FixtureWorkbenchService:
         """Return aggregate local artifact status only; no records are repaired or changed."""
 
         return LocalEvidenceHealthReadService(self._batches).snapshot()
+
+    def evidence_health_details(self) -> tuple[LocalEvidenceHealthDetail, ...]:
+        """List retained local artifact status context only; no result is changed."""
+
+        return LocalEvidenceHealthDetailReadService(self._batches).list()
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):

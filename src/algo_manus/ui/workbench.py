@@ -210,6 +210,45 @@ def _overview(st, service, pd) -> None:
             hide_index=True,
             width="stretch",
         )
+        details = service.evidence_health_details()
+        detail_filter = st.selectbox(
+            "Health detail filter",
+            ["Non-complete", "All statuses", "Complete", "Unavailable", "Incomplete", "Result-spec mismatch"],
+            key="lifecycle_health_detail_filter",
+        )
+        status_by_filter = {
+            "Complete": "complete",
+            "Unavailable": "unavailable",
+            "Incomplete": "incomplete",
+            "Result-spec mismatch": "result_spec_mismatch",
+        }
+        if detail_filter == "Non-complete":
+            visible_details = [item for item in details if item.status.value != "complete"]
+        elif detail_filter == "All statuses":
+            visible_details = list(details)
+        else:
+            visible_details = [
+                item for item in details if item.status.value == status_by_filter[detail_filter]
+            ]
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Batch ID": item.batch_id,
+                        "Instrument ID": item.instrument_id,
+                        "Status": item.status.value,
+                        "Result spec": item.result_spec_id,
+                        "Artifact spec": item.artifact_result_spec_id or "—",
+                        "Trades actual / expected": f"{item.actual_trade_count}/{item.expected_trade_count if item.expected_trade_count is not None else '—'}",
+                        "Equity points actual / expected": f"{item.actual_equity_point_count}/{item.expected_equity_point_count if item.expected_equity_point_count is not None else '—'}",
+                        "Batch created": item.created_at,
+                    }
+                    for item in visible_details
+                ]
+            ),
+            hide_index=True,
+            width="stretch",
+        )
         st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness, and they do not repair any result.")
 
 

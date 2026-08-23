@@ -15,6 +15,7 @@ from algo_manus.application.experiments import (
 )
 from algo_manus.application.evidence_lifecycle import LocalEvidenceLifecycle
 from algo_manus.application.evidence_health import LocalEvidenceHealth
+from algo_manus.application.evidence_health_detail import LocalEvidenceHealthDetail
 from algo_manus.domain.backtest import BacktestMetrics, BacktestResult, BacktestSpec, BacktestTrade
 from algo_manus.domain.experiment import (
     ExperimentBatch,
@@ -562,6 +563,51 @@ class SqliteExperimentBatchRepository:
             incomplete_count=incomplete,
             result_spec_mismatch_count=mismatch,
         )
+
+    def evidence_health_details(self) -> tuple[LocalEvidenceHealthDetail, ...]:
+        """List retained local integrity context without changing evidence rows."""
+
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT r.batch_id, r.instrument_id, b.created_at, r.spec_id,
+                       a.result_spec_id, a.trade_count, a.equity_point_count,
+                       (SELECT COUNT(*) FROM experiment_trades t
+                        WHERE t.batch_id = r.batch_id AND t.instrument_id = r.instrument_id),
+                       (SELECT COUNT(*) FROM experiment_equity_points p
+                        WHERE p.batch_id = r.batch_id AND p.instrument_id = r.instrument_id)
+                FROM experiment_results r
+                JOIN experiment_batches b ON b.batch_id = r.batch_id
+                LEFT JOIN experiment_result_artifacts a
+                  ON a.batch_id = r.batch_id AND a.instrument_id = r.instrument_id
+                ORDER BY b.created_at DESC, r.instrument_id
+                """
+            ).fetchall()
+        details = []
+        for row in rows:
+            if row[4] is None:
+                status = ExperimentArtifactIntegrityStatus.UNAVAILABLE
+            elif row[3] != row[4]:
+                status = ExperimentArtifactIntegrityStatus.RESULT_SPEC_MISMATCH
+            elif row[5] != row[7] or row[6] != row[8]:
+                status = ExperimentArtifactIntegrityStatus.INCOMPLETE
+            else:
+                status = ExperimentArtifactIntegrityStatus.COMPLETE
+            details.append(
+                LocalEvidenceHealthDetail(
+                    batch_id=row[0],
+                    instrument_id=row[1],
+                    created_at=datetime.fromisoformat(row[2]),
+                    status=status,
+                    result_spec_id=row[3],
+                    artifact_result_spec_id=row[4],
+                    expected_trade_count=row[5],
+                    actual_trade_count=row[7],
+                    expected_equity_point_count=row[6],
+                    actual_equity_point_count=row[8],
+                )
+            )
+        return tuple(details)
 
     def _validate_artifact_bounds(self, batch: ExperimentBatch) -> None:
         for item in batch.results:
