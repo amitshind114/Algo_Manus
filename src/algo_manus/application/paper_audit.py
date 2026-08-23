@@ -27,6 +27,7 @@ class LocalPaperOperationAuditRow:
     order_id: str
     instrument_id: str
     payload_valid: bool
+    integrity_status: str
     side: str | None
     quantity: int | None
     reference_price: float | None
@@ -39,6 +40,14 @@ class LocalPaperOperationAuditRow:
     research_manifest_id: str | None
     research_dataset_id: str | None
     research_validation_policy_version: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class LocalPaperOperationAuditIntegritySummary:
+    total_events: int
+    valid_events: int
+    malformed_payload_events: int
+    invalid_lifecycle_events: int
 
 
 class PaperOperationAuditTimelineReadService:
@@ -70,6 +79,7 @@ class PaperOperationAuditTimelineReadService:
                     order_id=event.order_id,
                     instrument_id=event.instrument_id,
                     payload_valid=payload_valid,
+                    integrity_status=self._integrity_status(payload_valid, next_state is not None),
                     side=self._string(payload, "side"),
                     quantity=self._positive_int(payload, "quantity"),
                     reference_price=self._positive_number(payload, "reference_price"),
@@ -87,6 +97,17 @@ class PaperOperationAuditTimelineReadService:
                 )
             )
         return tuple(rows)
+
+    def integrity(
+        self, limit: int = 1_000, order_id: str | None = None
+    ) -> LocalPaperOperationAuditIntegritySummary:
+        rows = self.rows(limit=limit, order_id=order_id)
+        return LocalPaperOperationAuditIntegritySummary(
+            total_events=len(rows),
+            valid_events=sum(item.integrity_status == "VALID" for item in rows),
+            malformed_payload_events=sum(not item.payload_valid for item in rows),
+            invalid_lifecycle_events=sum(item.lifecycle_state == "UNPROJECTABLE" for item in rows),
+        )
 
     def _events(self, *, limit: int, order_id: str | None) -> tuple[PaperEvent, ...]:
         if order_id is None:
@@ -106,6 +127,16 @@ class PaperOperationAuditTimelineReadService:
             return {}, False
         payload = canonical.get("payload") if isinstance(canonical, dict) else None
         return (payload, True) if isinstance(payload, dict) else ({}, False)
+
+    @staticmethod
+    def _integrity_status(payload_valid: bool, lifecycle_valid: bool) -> str:
+        if payload_valid and lifecycle_valid:
+            return "VALID"
+        if not payload_valid and not lifecycle_valid:
+            return "MALFORMED_PAYLOAD_AND_INVALID_LIFECYCLE"
+        if not payload_valid:
+            return "MALFORMED_PAYLOAD"
+        return "INVALID_LIFECYCLE"
 
     @staticmethod
     def _string(payload: dict[str, object], field: str) -> str | None:

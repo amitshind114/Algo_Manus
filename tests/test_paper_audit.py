@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -135,6 +136,54 @@ class PaperOperationAuditTests(unittest.TestCase):
             audit.rows(order_id=" ")
         with self.assertRaisesRegex(ValueError, "unknown"):
             audit.rows(order_id="paper-audit-unknown")
+
+    def test_integrity_statuses_and_totals_survive_restart_without_repair(self) -> None:
+        self._submit(order_id="paper-audit-integrity-valid")
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-payload-invalid",
+                event_type=PaperEventType.RISK_DECISION,
+                occurred_at=self.now + timedelta(minutes=1),
+                order_id="paper-audit-payload-invalid",
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                payload="not-json",
+            )
+        )
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-lifecycle-invalid",
+                event_type=PaperEventType.ORDER_FILLED,
+                occurred_at=self.now + timedelta(minutes=2),
+                order_id="paper-audit-lifecycle-invalid",
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                payload=json.dumps({"payload": {"fill_price": 101}}),
+            )
+        )
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-both-invalid",
+                event_type=PaperEventType.ORDER_CANCELLED,
+                occurred_at=self.now + timedelta(minutes=3),
+                order_id="paper-audit-both-invalid",
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                payload="not-json",
+            )
+        )
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        rows = {row.event_id: row for row in restarted.rows()}
+        summary = restarted.integrity()
+
+        self.assertEqual(rows["EVT-audit-payload-invalid"].integrity_status, "MALFORMED_PAYLOAD")
+        self.assertEqual(rows["EVT-audit-lifecycle-invalid"].integrity_status, "INVALID_LIFECYCLE")
+        self.assertEqual(
+            rows["EVT-audit-both-invalid"].integrity_status,
+            "MALFORMED_PAYLOAD_AND_INVALID_LIFECYCLE",
+        )
+        self.assertEqual(summary.total_events, 5)
+        self.assertEqual(summary.valid_events, 2)
+        self.assertEqual(summary.malformed_payload_events, 2)
+        self.assertEqual(summary.invalid_lifecycle_events, 2)
 
 
 if __name__ == "__main__":

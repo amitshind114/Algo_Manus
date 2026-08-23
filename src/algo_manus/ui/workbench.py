@@ -859,8 +859,21 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         if selected_audit_order_id == "All retained local orders"
                         else paper_audit.rows(order_id=selected_audit_order_id)
                     )
+                    integrity = paper_audit.integrity(
+                        order_id=(
+                            None
+                            if selected_audit_order_id == "All retained local orders"
+                            else selected_audit_order_id
+                        )
+                    )
                     if selected_audit_order_id != "All retained local orders":
                         st.caption(f"Showing retained local audit rows for order `{selected_audit_order_id}` only.")
+                    integrity_tiles = st.columns(4)
+                    integrity_tiles[0].metric("Retained events", integrity.total_events)
+                    integrity_tiles[1].metric("Valid interpretation", integrity.valid_events)
+                    integrity_tiles[2].metric("Malformed payload", integrity.malformed_payload_events)
+                    integrity_tiles[3].metric("Invalid lifecycle", integrity.invalid_lifecycle_events)
+                    st.caption("Integrity is a read-only interpretation of retained local payload shape and lifecycle order. It does not repair, reconcile or confirm any broker or execution state.")
                     st.dataframe(
                         pd.DataFrame(
                             [
@@ -879,6 +892,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                                     "Research batch": item.research_batch_id or "—",
                                     "Research manifest": item.research_manifest_id or "—",
                                     "Payload valid": item.payload_valid,
+                                    "Audit integrity": item.integrity_status,
                                 }
                                 for item in audit_rows
                             ]

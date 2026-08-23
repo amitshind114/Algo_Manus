@@ -20,6 +20,17 @@ Phase 8A adds a read-only chronological view of retained events from the local a
 
 The workbench may display all retained local audit rows or rows for one selected retained local order ID. Selecting an order changes only the rows displayed. A blank or unknown order ID is rejected by the application read service; neither case changes the local ledger, risk controls, promotion evidence or projected portfolio state.
 
+## Read-only integrity interpretation
+
+| Status | Meaning |
+|---|---|
+| `VALID` | The retained payload has the expected local shape and the event fits the local lifecycle sequence observed by the reader. |
+| `MALFORMED_PAYLOAD` | The retained payload cannot be parsed as the expected local canonical payload shape. |
+| `INVALID_LIFECYCLE` | The retained event does not fit the local lifecycle sequence observed by the reader. |
+| `MALFORMED_PAYLOAD_AND_INVALID_LIFECYCLE` | Both conditions apply to the same retained event. |
+
+The workbench displays total retained events, valid interpretations, malformed payloads and invalid lifecycle transitions for the selected scope. Malformed-payload and invalid-lifecycle totals may overlap when one event has both conditions. These fields only describe the current local reader interpretation; they never repair, remove, amend, reconcile, or confirm the retained events.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.
