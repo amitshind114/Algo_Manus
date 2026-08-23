@@ -32,9 +32,13 @@ The manifest accepts only `RESEARCH` datasets and only validation outcomes with 
 
 Each issue carries a stable code, severity and human-readable message. An accepted outcome cannot contain an error-severity issue, and a non-accepted outcome must name at least one issue.
 
-## Storage boundary
+## Local storage and read boundary
 
-Phase 2A provides `ResearchRunManifestRepository` and `DatasetValidationRepository` ports only. It intentionally adds no database table and no implementation. A later persistence phase can implement the ports using SQLite first, preserving the current Windows-safe connection discipline, then add another storage engine without changing the domain evidence model.
+The default local implementation is `SqliteResearchEvidenceRepository`. It persists manifests, lineages, validation outcomes and validation issues using a component-level schema version, foreign-key integrity and short-lived SQLite connections. Existing immutable manifest IDs are idempotent; an attempt to write different validation content under the same dataset/policy key fails explicitly rather than overwriting evidence.
+
+`ResearchEvidenceReadService` provides a narrow, read-only local query path for a future Backtests/Experiments evidence panel. It can retrieve one manifest by ID or return recent persisted manifests. It does not calculate a KPI, alter a backtest or mutate paper state.
+
+The storage implementation remains local SQLite only. A future database implementation may satisfy the same repository boundary, but no cloud database, data provider, broker or background service is implied by this capability.
 
 ## What this phase does not claim
 
@@ -47,6 +51,6 @@ make lint
 make test
 ```
 
-The contract suite verifies deterministic IDs across different creation times, rejects non-research/quarantined/rejected inputs and blocks a validation outcome that attempts to silently accept an error.
+The suite verifies deterministic IDs across different creation times, rejects non-research/quarantined/rejected inputs, blocks a validation outcome that attempts to silently accept an error, round-trips evidence through SQLite, rejects conflicting immutable outcomes and releases database handles for local file cleanup.
 
 This is research and analysis only, not personalized financial advice.

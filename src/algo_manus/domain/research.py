@@ -251,6 +251,8 @@ class ResearchRunManifestRepository(Protocol):
 
     def get(self, manifest_id: str) -> ResearchRunManifest | None: ...
 
+    def list_recent(self, limit: int = 20) -> tuple[ResearchRunManifest, ...]: ...
+
 
 class DatasetValidationRepository(Protocol):
     """Persistence boundary for immutable data-quality outcomes."""
