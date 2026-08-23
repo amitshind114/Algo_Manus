@@ -56,6 +56,14 @@ class InstrumentMasterTests(unittest.TestCase):
         self.assertEqual(loaded.instruments[0].instrument_id, "ANGEL_ONE:NSE:NSE:500325")
         self.assertEqual(len(loaded.active_instruments), 2)
 
+    def test_repository_releases_database_file_after_use(self) -> None:
+        database_path = Path(self.temp_dir.name) / "instrument_master.sqlite3"
+        self.repository.save(snapshot(downloaded_at=self.now))
+
+        database_path.unlink()
+
+        self.assertFalse(database_path.exists())
+
     def test_stale_snapshot_downloads_once_then_reuses_unchanged_content(self) -> None:
         prior = snapshot(downloaded_at=self.now - timedelta(days=2))
         self.repository.save(prior)

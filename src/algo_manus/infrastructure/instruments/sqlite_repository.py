@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
+from typing import Iterator
 
 from algo_manus.domain.instruments import (
     Instrument,
@@ -29,8 +31,26 @@ class SqliteInstrumentSnapshotRepository:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        """Yield one transaction and always close its OS-level file handle.
+
+        ``sqlite3.Connection`` commits/rolls back when used as a context manager,
+        but it does not close itself. Explicit closure matters on Windows, where an
+        open database handle prevents temporary test directories from being removed.
+        """
+        connection = self._connect()
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute(
                 """
@@ -84,7 +104,7 @@ class SqliteInstrumentSnapshotRepository:
             )
 
     def save(self, snapshot: InstrumentMasterSnapshot) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             existing = connection.execute(
                 "SELECT snapshot_id FROM instrument_snapshots WHERE snapshot_id = ?",
                 (snapshot.snapshot_id,),
@@ -135,7 +155,7 @@ class SqliteInstrumentSnapshotRepository:
                 )
 
     def latest(self, broker: str) -> InstrumentMasterSnapshot | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 """
                 SELECT snapshot_id FROM instrument_snapshots
@@ -148,7 +168,7 @@ class SqliteInstrumentSnapshotRepository:
         return self.get(row["snapshot_id"]) if row else None
 
     def find_by_content_hash(self, broker: str, content_sha256: str) -> InstrumentMasterSnapshot | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 """
                 SELECT snapshot_id FROM instrument_snapshots
@@ -159,7 +179,7 @@ class SqliteInstrumentSnapshotRepository:
         return self.get(row["snapshot_id"]) if row else None
 
     def last_checked_at(self, broker: str) -> datetime | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 """
                 SELECT last_checked_at FROM instrument_master_sync_state
@@ -172,7 +192,7 @@ class SqliteInstrumentSnapshotRepository:
     def record_check(self, broker: str, snapshot_id: str, checked_at: datetime) -> None:
         if checked_at.tzinfo is None:
             raise ValueError("checked_at must be timezone-aware")
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 INSERT INTO instrument_master_sync_state (broker, snapshot_id, last_checked_at)
@@ -185,7 +205,7 @@ class SqliteInstrumentSnapshotRepository:
             )
 
     def get(self, snapshot_id: str) -> InstrumentMasterSnapshot | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             snapshot_row = connection.execute(
                 "SELECT * FROM instrument_snapshots WHERE snapshot_id = ?",
                 (snapshot_id,),
