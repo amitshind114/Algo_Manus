@@ -56,9 +56,9 @@ india-algo-platform/
 
 This is an engineering and research repository, not a signal-selling, advisory or portfolio-management product. Before any live pilot, the project must complete a documented review of applicable exchange, broker, data-provider, information-security, privacy and legal requirements. The design will preserve a paper-only default and an explicit “no-live-execution” gate until a controlled pilot is separately approved.
 
-## Next milestone
+## Current implementation status
 
-The repository now includes the high-level [`docs/ROADMAP.md`](docs/ROADMAP.md) and detailed ten-phase [`docs/MASTER_DELIVERY_PLAN.md`](docs/MASTER_DELIVERY_PLAN.md). After the documentation gate, the next proposed work is to define canonical domain contracts and an executable-free data/instrument research skeleton.
+The repository now includes the high-level [`docs/ROADMAP.md`](docs/ROADMAP.md), detailed ten-phase [`docs/MASTER_DELIVERY_PLAN.md`](docs/MASTER_DELIVERY_PLAN.md) and implemented [`docs/PHASE_1_FOUNDATION.md`](docs/PHASE_1_FOUNDATION.md). Phase 1 provides the canonical instrument-master and selected-universe foundation without a broker login, market-data request or execution capability.
 
 ## Local MVP workflow and preview
 
