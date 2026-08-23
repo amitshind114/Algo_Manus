@@ -306,6 +306,71 @@ def _overview(st, service, pd) -> None:
                     hide_index=True,
                     width="stretch",
                 )
+        with st.expander("Compare two local batch health scopes", expanded=False):
+            if len(all_history) < 2:
+                st.info("At least two retained local batches are required for a side-by-side health comparison.")
+            else:
+                batch_ids = [item.batch_id for item in all_history]
+                compare_left, compare_right = st.columns(2)
+                left_batch_id = compare_left.selectbox(
+                    "Left retained batch",
+                    batch_ids,
+                    key="lifecycle_compare_left",
+                )
+                right_batch_id = compare_right.selectbox(
+                    "Right retained batch",
+                    [item for item in batch_ids if item != left_batch_id],
+                    key="lifecycle_compare_right",
+                )
+                comparison = service.evidence_health_comparison(
+                    left_batch_id=left_batch_id,
+                    right_batch_id=right_batch_id,
+                )
+                st.caption("Read-only current local health comparison. Delta means right retained batch minus left retained batch; it is not a performance, market or broker comparison.")
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Local health count": "Results",
+                                "Left": comparison.left.health.total_result_count,
+                                "Right": comparison.right.health.total_result_count,
+                                "Right − left": comparison.delta.total_result_count,
+                            },
+                            {
+                                "Local health count": "Complete",
+                                "Left": comparison.left.health.complete_count,
+                                "Right": comparison.right.health.complete_count,
+                                "Right − left": comparison.delta.complete_count,
+                            },
+                            {
+                                "Local health count": "Unavailable",
+                                "Left": comparison.left.health.unavailable_count,
+                                "Right": comparison.right.health.unavailable_count,
+                                "Right − left": comparison.delta.unavailable_count,
+                            },
+                            {
+                                "Local health count": "Incomplete",
+                                "Left": comparison.left.health.incomplete_count,
+                                "Right": comparison.right.health.incomplete_count,
+                                "Right − left": comparison.delta.incomplete_count,
+                            },
+                            {
+                                "Local health count": "Result-spec mismatch",
+                                "Left": comparison.left.health.result_spec_mismatch_count,
+                                "Right": comparison.right.health.result_spec_mismatch_count,
+                                "Right − left": comparison.delta.result_spec_mismatch_count,
+                            },
+                            {
+                                "Local health count": "Needs attention",
+                                "Left": comparison.left.health.non_complete_count,
+                                "Right": comparison.right.health.non_complete_count,
+                                "Right − left": comparison.delta.non_complete_count,
+                            },
+                        ]
+                    ),
+                    hide_index=True,
+                    width="stretch",
+                )
         st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness, and they do not repair any result.")
 
 

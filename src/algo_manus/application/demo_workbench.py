@@ -33,6 +33,10 @@ from algo_manus.application.evidence_health_scope import (
     LocalEvidenceHealthScope,
     LocalEvidenceHealthScopeReadService,
 )
+from algo_manus.application.evidence_health_comparison import (
+    LocalEvidenceHealthComparison,
+    LocalEvidenceHealthComparisonReadService,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -344,6 +348,19 @@ class FixtureWorkbenchService:
             batch_id=batch_id,
             created_from=created_from,
             created_until=created_until,
+        )
+
+    def evidence_health_comparison(
+        self,
+        *,
+        left_batch_id: str,
+        right_batch_id: str,
+    ) -> LocalEvidenceHealthComparison:
+        """Compare two retained local batches only; no evidence or workflow is changed."""
+
+        return LocalEvidenceHealthComparisonReadService(self._batches).compare(
+            left_batch_id=left_batch_id,
+            right_batch_id=right_batch_id,
         )
 
     @staticmethod
