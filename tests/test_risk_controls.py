@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import sqlite3
 import unittest
 
 from algo_manus.application.paper_execution import PaperExecutionService
@@ -90,6 +91,31 @@ class RiskControlPersistenceTests(unittest.TestCase):
             self.assertEqual(first, second)
             self.assertFalse(first.kill_switch_active)
             self.assertEqual(len(controls.kill_switch_history()), 1)
+
+    def test_version_one_policy_database_migrates_with_legacy_limits_unset(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "risk_controls.sqlite"
+            with sqlite3.connect(path) as connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE schema_metadata (component TEXT PRIMARY KEY, schema_version INTEGER NOT NULL);
+                    INSERT INTO schema_metadata VALUES ('risk_controls', 1);
+                    CREATE TABLE central_risk_policies (
+                        policy_version TEXT PRIMARY KEY,
+                        max_quantity_per_order INTEGER NOT NULL,
+                        max_notional_per_order REAL NOT NULL,
+                        max_open_positions INTEGER NOT NULL,
+                        persisted_at TEXT NOT NULL
+                    );
+                    INSERT INTO central_risk_policies VALUES
+                    ('legacy-policy-v1', 10, 1000, 2, '2026-08-23T10:00:00+00:00');
+                    """
+                )
+
+            restored, _ = SqliteRiskControlRepository(path).get_policy("legacy-policy-v1")
+            self.assertEqual(restored.policy_version, "legacy-policy-v1")
+            self.assertFalse(restored.has_portfolio_limits)
+            self.assertIsNone(restored.max_gross_notional)
 
 
 if __name__ == "__main__":

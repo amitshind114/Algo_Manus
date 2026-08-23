@@ -14,7 +14,7 @@ from algo_manus.domain.risk_engine import CentralRiskPolicy
 
 class SqliteRiskControlRepository:
     _SCHEMA_COMPONENT = "risk_controls"
-    _SCHEMA_VERSION = 1
+    _SCHEMA_VERSION = 2
 
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
@@ -52,6 +52,8 @@ class SqliteRiskControlRepository:
                     "INSERT INTO schema_metadata (component, schema_version) VALUES (?, ?)",
                     (self._SCHEMA_COMPONENT, self._SCHEMA_VERSION),
                 )
+            elif schema["schema_version"] == 1:
+                self._migrate_v1_to_v2(connection)
             elif schema["schema_version"] != self._SCHEMA_VERSION:
                 raise RuntimeError("unsupported risk controls schema version")
             connection.execute(
@@ -61,6 +63,10 @@ class SqliteRiskControlRepository:
                     max_quantity_per_order INTEGER NOT NULL,
                     max_notional_per_order REAL NOT NULL,
                     max_open_positions INTEGER NOT NULL,
+                    max_gross_notional REAL,
+                    max_notional_per_instrument REAL,
+                    max_realized_loss REAL,
+                    max_concentration_pct REAL,
                     persisted_at TEXT NOT NULL
                 )
                 """
@@ -79,6 +85,24 @@ class SqliteRiskControlRepository:
                 "CREATE INDEX IF NOT EXISTS idx_kill_switch_changes_time ON kill_switch_changes (occurred_at DESC, change_id DESC)"
             )
 
+    @classmethod
+    def _migrate_v1_to_v2(cls, connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(central_risk_policies)").fetchall()
+        }
+        for column in (
+            "max_gross_notional",
+            "max_notional_per_instrument",
+            "max_realized_loss",
+            "max_concentration_pct",
+        ):
+            if column not in columns:
+                connection.execute(f"ALTER TABLE central_risk_policies ADD COLUMN {column} REAL")
+        connection.execute(
+            "UPDATE schema_metadata SET schema_version = ? WHERE component = ?",
+            (cls._SCHEMA_VERSION, cls._SCHEMA_COMPONENT),
+        )
+
     def save_policy(self, policy: CentralRiskPolicy, *, persisted_at: datetime) -> None:
         if persisted_at.tzinfo is None:
             raise ValueError("risk policy persistence timestamp must be timezone-aware")
@@ -87,26 +111,25 @@ class SqliteRiskControlRepository:
                 "SELECT * FROM central_risk_policies WHERE policy_version = ?", (policy.policy_version,)
             ).fetchone()
             if existing is not None:
-                restored = CentralRiskPolicy(
-                    policy_version=existing["policy_version"],
-                    max_quantity_per_order=existing["max_quantity_per_order"],
-                    max_notional_per_order=existing["max_notional_per_order"],
-                    max_open_positions=existing["max_open_positions"],
-                )
-                if restored != policy:
+                if self._policy_from_row(existing) != policy:
                     raise ValueError("immutable central risk policy conflicts with existing version")
                 return
             connection.execute(
                 """
                 INSERT INTO central_risk_policies
-                (policy_version, max_quantity_per_order, max_notional_per_order, max_open_positions, persisted_at)
-                VALUES (?, ?, ?, ?, ?)
+                (policy_version, max_quantity_per_order, max_notional_per_order, max_open_positions,
+                 max_gross_notional, max_notional_per_instrument, max_realized_loss, max_concentration_pct, persisted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     policy.policy_version,
                     policy.max_quantity_per_order,
                     policy.max_notional_per_order,
                     policy.max_open_positions,
+                    policy.max_gross_notional,
+                    policy.max_notional_per_instrument,
+                    policy.max_realized_loss,
+                    policy.max_concentration_pct,
                     persisted_at.isoformat(),
                 ),
             )
@@ -118,15 +141,7 @@ class SqliteRiskControlRepository:
             ).fetchone()
         if row is None:
             return None
-        return (
-            CentralRiskPolicy(
-                policy_version=row["policy_version"],
-                max_quantity_per_order=row["max_quantity_per_order"],
-                max_notional_per_order=row["max_notional_per_order"],
-                max_open_positions=row["max_open_positions"],
-            ),
-            datetime.fromisoformat(row["persisted_at"]),
-        )
+        return self._policy_from_row(row), datetime.fromisoformat(row["persisted_at"])
 
     def append_kill_switch_change(self, change: KillSwitchChange) -> None:
         with self._connection() as connection:
@@ -166,6 +181,19 @@ class SqliteRiskControlRepository:
                 "SELECT * FROM kill_switch_changes ORDER BY occurred_at DESC, change_id DESC LIMIT ?", (limit,)
             ).fetchall()
         return tuple(self._change_from_row(row) for row in rows)
+
+    @staticmethod
+    def _policy_from_row(row: sqlite3.Row) -> CentralRiskPolicy:
+        return CentralRiskPolicy(
+            policy_version=row["policy_version"],
+            max_quantity_per_order=row["max_quantity_per_order"],
+            max_notional_per_order=row["max_notional_per_order"],
+            max_open_positions=row["max_open_positions"],
+            max_gross_notional=row["max_gross_notional"],
+            max_notional_per_instrument=row["max_notional_per_instrument"],
+            max_realized_loss=row["max_realized_loss"],
+            max_concentration_pct=row["max_concentration_pct"],
+        )
 
     @staticmethod
     def _change_from_row(row: sqlite3.Row) -> KillSwitchChange:

@@ -31,6 +31,7 @@ from algo_manus.domain.risk_engine import (
     CentralRiskPolicy,
     RiskDecisionType,
     RiskEvaluationContext,
+    PortfolioRiskSnapshot,
 )
 
 
@@ -67,6 +68,7 @@ class PaperExecutionService:
         kill_switch_active: bool,
         instrument_status: InstrumentStatus | None,
         validation_outcome: DatasetValidationOutcome | None,
+        portfolio_risk: PortfolioRiskSnapshot | None = None,
         control_snapshot: RiskControlSnapshot | None = None,
         now: datetime | None = None,
     ) -> PaperSubmission:
@@ -84,6 +86,7 @@ class PaperExecutionService:
                 open_position_count=sum(1 for quantity in portfolio.positions.values() if quantity != 0),
                 instrument_status=instrument_status,
                 validation_outcome=validation_outcome,
+                portfolio_risk=portfolio_risk,
             ),
         )
         decision = (

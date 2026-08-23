@@ -334,6 +334,7 @@ def _reporting(st, pd) -> None:
 def _paper(st, by_id, pd, control_service, ledger) -> None:
     from algo_manus.application.paper_execution import PaperExecutionService
     from algo_manus.application.paper_projection import PaperOperationsReadService
+    from algo_manus.application.paper_risk import PaperPortfolioRiskService
     from algo_manus.domain.instruments import InstrumentStatus
     from algo_manus.domain.research import DataValidationStatus, DatasetValidationOutcome
     from algo_manus.domain.risk import DeterministicRiskPolicy, OrderIntent, OrderSide, PaperPortfolioSnapshot, RiskLimits
@@ -345,10 +346,14 @@ def _paper(st, by_id, pd, control_service, ledger) -> None:
         st.info("Run a fixture research experiment before using the paper simulator.")
         return
     fixture_policy = CentralRiskPolicy(
-        policy_version="fixture-central-risk-v1",
+        policy_version="fixture-central-risk-v2",
         max_quantity_per_order=1_000,
         max_notional_per_order=100_000,
         max_open_positions=5,
+        max_gross_notional=250_000,
+        max_notional_per_instrument=100_000,
+        max_realized_loss=10_000,
+        max_concentration_pct=100,
     )
     snapshot = control_service.ensure_snapshot(
         fixture_policy,
@@ -388,7 +393,12 @@ def _paper(st, by_id, pd, control_service, ledger) -> None:
         side = st.selectbox("Side", [OrderSide.BUY, OrderSide.SELL])
         quantity = st.number_input("Fixture quantity", min_value=1, value=10, step=1)
         mark = st.number_input("Fixture mark", min_value=1.0, value=100.0, step=1.0)
-        if st.button("Simulate risk-gated paper order", type="primary"):
+        submit = st.button("Simulate risk-gated paper order", type="primary")
+    fixture_marks = {position.instrument_id: position.average_entry_price for position in projection.positions}
+    fixture_marks[instrument_id] = mark
+    portfolio_risk = PaperPortfolioRiskService().snapshot(projection, marks=fixture_marks)
+    if submit:
+        with left:
             intent = OrderIntent(
                 order_id=f"fixture-paper-{len(paper_operations.events()) + 1}", instrument_id=instrument_id,
                 side=side, quantity=quantity, reference_price=mark, strategy_revision_id=batch.parameter_revision_id,
@@ -412,10 +422,12 @@ def _paper(st, by_id, pd, control_service, ledger) -> None:
                     realized_pnl=projection.realized_pnl,
                     session_order_count=projection.session_order_count,
                 ),
-                marks={instrument_id: mark}, limits=RiskLimits(max_gross_notional=250_000, max_notional_per_instrument=100_000, max_session_orders=5, max_daily_loss=10_000),
+                marks=fixture_marks,
+                limits=RiskLimits(max_gross_notional=250_000, max_notional_per_instrument=100_000, max_session_orders=5, max_daily_loss=10_000),
                 kill_switch_active=snapshot.kill_switch_active,
                 instrument_status=InstrumentStatus.ACTIVE,
                 validation_outcome=validation,
+                portfolio_risk=portfolio_risk,
                 control_snapshot=snapshot,
             )
             if submission.decision.allowed:
@@ -431,6 +443,16 @@ def _paper(st, by_id, pd, control_service, ledger) -> None:
         projection_tiles[1].metric("Projected cash", f"₹{projection.cash:,.2f}")
         projection_tiles[2].metric("Realized P&L", f"₹{projection.realized_pnl:,.2f}")
         projection_tiles[3].metric("Open local positions", len(projection.positions))
+        risk_tiles = st.columns(4)
+        gross_limit = snapshot.policy.max_gross_notional or 0
+        instrument_limit = snapshot.policy.max_notional_per_instrument or 0
+        loss_limit = snapshot.policy.max_realized_loss or 0
+        max_instrument_notional = max((notional for _, notional in portfolio_risk.instrument_notionals), default=0.0)
+        risk_tiles[0].metric("Fixture gross exposure", f"₹{portfolio_risk.gross_notional:,.2f}", f"cap ₹{gross_limit:,.0f}")
+        risk_tiles[1].metric("Largest fixture exposure", f"₹{max_instrument_notional:,.2f}", f"cap ₹{instrument_limit:,.0f}")
+        risk_tiles[2].metric("Realized loss used", f"₹{max(0.0, -portfolio_risk.realized_pnl):,.2f}", f"cap ₹{loss_limit:,.0f}")
+        risk_tiles[3].metric("Max concentration", f"{snapshot.policy.max_concentration_pct:.0f}%")
+        st.caption("Exposure uses explicit fixture marks: the currently selected mark and average-entry marks for other local holdings. It is not broker valuation or reconciliation.")
         events = paper_operations.events()
         if not events:
             st.info("No durable fixture paper events yet.")

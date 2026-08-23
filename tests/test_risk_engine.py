@@ -14,6 +14,7 @@ from algo_manus.domain.risk import OrderIntent, OrderSide
 from algo_manus.domain.risk_engine import (
     CentralRiskEngine,
     CentralRiskPolicy,
+    PortfolioRiskSnapshot,
     RiskDecisionCode,
     RiskDecisionType,
     RiskEvaluationContext,
@@ -111,6 +112,64 @@ class CentralRiskEngineTests(unittest.TestCase):
             with self.subTest(code=expected_code):
                 decision = self.engine.evaluate(intent=self.intent, policy=self.policy, context=context)
                 self.assertEqual(decision.decision_type, RiskDecisionType.DEFER)
+                self.assertEqual(decision.code, expected_code)
+
+    def test_engine_requires_snapshot_and_enforces_portfolio_limits(self) -> None:
+        policy = CentralRiskPolicy(
+            "central-portfolio-v1", 100, 10_000, 3,
+            max_gross_notional=1_500,
+            max_notional_per_instrument=1_000,
+            max_realized_loss=200,
+            max_concentration_pct=70,
+        )
+        missing = self.engine.evaluate(intent=self.intent, policy=policy, context=self._context())
+        self.assertEqual(missing.decision_type, RiskDecisionType.DEFER)
+        self.assertEqual(missing.code, RiskDecisionCode.PORTFOLIO_RISK_CONTEXT_MISSING)
+
+        instrument_policy = CentralRiskPolicy(
+            "central-instrument-v1", 100, 10_000, 3,
+            max_gross_notional=3_000,
+            max_notional_per_instrument=1_000,
+            max_realized_loss=200,
+            max_concentration_pct=100,
+        )
+        concentration_policy = CentralRiskPolicy(
+            "central-concentration-v1", 100, 10_000, 3,
+            max_gross_notional=3_000,
+            max_notional_per_instrument=3_000,
+            max_realized_loss=200,
+            max_concentration_pct=70,
+        )
+        scenarios = (
+            (
+                policy,
+                PortfolioRiskSnapshot(1_450, 0, (("OTHER", 1_450),)),
+                RiskDecisionCode.GROSS_EXPOSURE_LIMIT,
+            ),
+            (
+                instrument_policy,
+                PortfolioRiskSnapshot(950, 0, ((self.intent.instrument_id, 950),)),
+                RiskDecisionCode.INSTRUMENT_EXPOSURE_LIMIT,
+            ),
+            (
+                policy,
+                PortfolioRiskSnapshot(100, -200, (("OTHER", 100),)),
+                RiskDecisionCode.REALIZED_LOSS_LIMIT,
+            ),
+            (
+                concentration_policy,
+                PortfolioRiskSnapshot(500, 0, ((self.intent.instrument_id, 500),)),
+                RiskDecisionCode.CONCENTRATION_LIMIT,
+            ),
+        )
+        for scenario_policy, snapshot, expected_code in scenarios:
+            with self.subTest(code=expected_code):
+                decision = self.engine.evaluate(
+                    intent=self.intent,
+                    policy=scenario_policy,
+                    context=self._context(portfolio_risk=snapshot),
+                )
+                self.assertEqual(decision.decision_type, RiskDecisionType.REJECT)
                 self.assertEqual(decision.code, expected_code)
 
 
