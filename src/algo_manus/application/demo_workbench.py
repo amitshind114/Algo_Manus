@@ -25,6 +25,10 @@ from algo_manus.application.evidence_health_detail import (
     LocalEvidenceHealthDetail,
     LocalEvidenceHealthDetailReadService,
 )
+from algo_manus.application.evidence_health_history import (
+    LocalEvidenceHealthHistoryReadService,
+    LocalEvidenceHealthHistoryRow,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -317,6 +321,11 @@ class FixtureWorkbenchService:
         """List retained local artifact status context only; no result is changed."""
 
         return LocalEvidenceHealthDetailReadService(self._batches).list()
+
+    def evidence_health_history(self) -> tuple[LocalEvidenceHealthHistoryRow, ...]:
+        """Return chronological retained local health coverage only; no result is changed."""
+
+        return LocalEvidenceHealthHistoryReadService(self._batches).list()
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):

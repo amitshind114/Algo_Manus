@@ -249,6 +249,31 @@ def _overview(st, service, pd) -> None:
             hide_index=True,
             width="stretch",
         )
+        with st.expander("Chronological local health history", expanded=False):
+            history = service.evidence_health_history()
+            st.caption("Read-only retained batch coverage in oldest-to-newest creation order. It does not establish market-data coverage, strategy performance or evidence change causes.")
+            if not history:
+                st.info("No retained local experiment batches are available for health-history inspection.")
+            else:
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Batch created": item.created_at,
+                                "Batch ID": item.batch_id,
+                                "Results": item.total_result_count,
+                                "Complete": item.complete_count,
+                                "Unavailable": item.unavailable_count,
+                                "Incomplete": item.incomplete_count,
+                                "Spec mismatch": item.result_spec_mismatch_count,
+                                "Needs attention": item.non_complete_count,
+                            }
+                            for item in history
+                        ]
+                    ),
+                    hide_index=True,
+                    width="stretch",
+                )
         st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness, and they do not repair any result.")
 
 
