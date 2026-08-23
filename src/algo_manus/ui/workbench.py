@@ -4,6 +4,17 @@ from __future__ import annotations
 
 from algo_manus.application.leaderboard import LeaderboardSort
 
+NAV_ITEMS = (
+    ("Home", "Overview"),
+    ("Data & instruments", "Data & instruments"),
+    ("Backtesting", "Backtesting"),
+    ("Multi-test leaderboard", "Multi-test leaderboard"),
+    ("Strategies", "Strategies"),
+    ("Reporting", "Reporting"),
+    ("Risk & paper", "Risk & paper"),
+    ("Roadmap", "Roadmap"),
+)
+
 def leaderboard_sort_options() -> dict[str, LeaderboardSort]:
     """Keep the KPI sort mapping importable and testable outside Streamlit."""
     return {
@@ -31,10 +42,7 @@ def run_workbench(st) -> None:
         st.success("FIXTURE MODE — LOCAL ONLY")
         st.caption(FIXTURE_MODE_LABEL)
         st.divider()
-        page = st.selectbox(
-            "Workspace",
-            ["Overview", "Research lab", "KPI leaderboard", "Paper simulator", "Safety & data"],
-        )
+        page = _sidebar_navigation(st)
         st.divider()
         st.metric("Selected securities", len(st.session_state.selected_ids))
         st.metric("Saved local experiments", len(st.session_state.history))
@@ -42,14 +50,20 @@ def run_workbench(st) -> None:
 
     if page == "Overview":
         _overview(st)
-    elif page == "Research lab":
+    elif page == "Data & instruments":
+        _data_and_instruments(st, instruments, by_id, pd)
+    elif page == "Backtesting":
         _research_lab(st, service, instruments, by_id, pd)
-    elif page == "KPI leaderboard":
+    elif page == "Multi-test leaderboard":
         _leaderboard(st, service, pd)
-    elif page == "Paper simulator":
+    elif page == "Strategies":
+        _strategies(st, pd)
+    elif page == "Reporting":
+        _reporting(st, pd)
+    elif page == "Risk & paper":
         _paper(st, by_id, pd)
     else:
-        _safety(st, instruments, pd)
+        _roadmap(st, instruments, pd)
 
 
 def _state(st, instrument_ids: tuple[str, ...]) -> None:
@@ -58,6 +72,17 @@ def _state(st, instrument_ids: tuple[str, ...]) -> None:
     st.session_state.setdefault("active_batch", None)
     st.session_state.setdefault("paper_events", [])
     st.session_state.setdefault("paper_kill", False)
+    st.session_state.setdefault("workspace", "Overview")
+
+
+def _sidebar_navigation(st) -> str:
+    st.markdown("#### Workspace")
+    for label, page in NAV_ITEMS:
+        active = st.session_state.workspace == page
+        if st.button(label, key=f"nav_{page}", type="primary" if active else "secondary"):
+            st.session_state.workspace = page
+            st.rerun()
+    return st.session_state.workspace
 
 
 def _style(st) -> None:
@@ -67,7 +92,9 @@ def _style(st) -> None:
         .stApp { background: #f6f7f9; color: #172033; }
         [data-testid="stSidebar"] { background: #101828; min-width: 290px; }
         [data-testid="stSidebar"] * { color: #eef2f7; }
-        [data-testid="stSidebar"] [data-baseweb="select"] * { color: #172033; }
+        [data-testid="stSidebar"] .stButton > button { width: 100%; justify-content: flex-start; border-radius: 7px; margin-bottom: 3px; color: #eef2f7 !important; }
+        [data-testid="stSidebar"] .stButton > button[kind="secondary"] { background: #1d2939; border-color: #344054; color: #eef2f7 !important; }
+        [data-testid="stSidebar"] .stButton > button[kind="primary"] { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff !important; }
         .kicker { color: #1d4ed8; font-size: .78rem; font-weight: 700; letter-spacing: .10em; }
         .title { font-size: 2.25rem; font-weight: 750; margin: .1rem 0 .25rem; }
         .fixture { background: #fff7dd; border: 1px solid #f5d689; color: #765700; border-radius: 10px; padding: 11px 14px; margin: 10px 0 20px; }
@@ -99,7 +126,7 @@ def _overview(st) -> None:
     left, right = st.columns([1.25, 1])
     with left:
         st.subheader("Work flow")
-        st.markdown("1. Select a local sample universe  \n2. Tune a versioned SMA revision  \n3. Run a multi-security backtest  \n4. Inspect KPI rows, equity and trades  \n5. Exercise a risk-gated paper event lifecycle")
+        st.markdown("1. Search and select a local sample universe  \n2. Tune a versioned SMA revision  \n3. Run single or multi-security backtests  \n4. Inspect KPI rows, equity, trades and reports  \n5. Exercise a risk-gated paper event lifecycle")
     with right:
         st.subheader("Active experiment")
         if batch is None:
@@ -111,11 +138,42 @@ def _overview(st) -> None:
             st.caption(f"Snapshot: {batch.universe_snapshot_id}")
 
 
+def _data_and_instruments(st, instruments, by_id, pd) -> None:
+    _header(st, "Data & instruments", "Search the current local universe as you would the future broker-synced instrument master. Manual ticker entry is intentionally not used.")
+    table = pd.DataFrame([
+        {"Symbol": item.symbol, "Company": item.display_name, "Segment": item.segment, "Instrument identity": item.instrument_id, "Status": "Fixture active"}
+        for item in instruments
+    ])
+    query, segment = st.columns([2.2, 1])
+    term = query.text_input("Search symbol or company", placeholder="ALPHA, BRAVO, INDUSTRIES")
+    selected_segment = segment.selectbox("Segment", ["All", "NSE Equity fixture"])
+    filtered = table.copy()
+    if term:
+        mask = filtered["Symbol"].str.contains(term, case=False, na=False) | filtered["Company"].str.contains(term, case=False, na=False)
+        filtered = filtered[mask]
+    if selected_segment != "All":
+        filtered = filtered[filtered["Segment"] == selected_segment]
+    metrics = st.columns(4)
+    metrics[0].metric("Instruments", len(table))
+    metrics[1].metric("Matched", len(filtered))
+    metrics[2].metric("Selected", len(st.session_state.selected_ids))
+    metrics[3].metric("Source", "Fixture snapshot")
+    st.dataframe(filtered, hide_index=True, width="stretch", height=260)
+    chosen = st.multiselect(
+        "Add instruments to the backtest universe",
+        options=[item.instrument_id for item in instruments],
+        default=st.session_state.selected_ids,
+        format_func=lambda instrument_id: f"{by_id[instrument_id].symbol} — {by_id[instrument_id].display_name}",
+    )
+    st.session_state.selected_ids = tuple(chosen)
+    st.caption("Future real-data mode will populate this table from a validated, versioned broker snapshot and flag unavailable or renamed instruments.")
+
+
 def _research_lab(st, service, instruments, by_id, pd) -> None:
-    _header(st, "Research lab", "Select multiple securities, edit SMA parameters and run the actual application-level experiment service.")
+    _header(st, "Backtesting engine", "Run a reproducible single or multi-security local experiment with the same practical control layout used in a research terminal.")
     controls, output = st.columns([0.85, 1.55])
     with controls:
-        st.subheader("Experiment setup")
+        st.subheader("Backtest controls")
         selected = st.multiselect(
             "Fixture NSE equity universe",
             options=[item.instrument_id for item in instruments],
@@ -133,9 +191,9 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
         if invalid:
             st.error("Fast SMA must be lower than slow SMA.")
         run = st.button("Run fixture experiment", type="primary", disabled=invalid or not selected)
-        st.caption("A run creates a parameter revision and snapshot-pinned experiment batch.")
+        st.caption("The same SMA revision, costs and data interval are applied to every selected security.")
     with output:
-        st.subheader("Experiment output")
+        st.subheader("Backtest result")
         if run:
             batch = service.run_experiment(
                 selected_instrument_ids=tuple(selected), fast_window=fast, slow_window=slow,
@@ -166,12 +224,12 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
              "Exit price": trade.exit_price, "Net P&L": trade.net_pnl, "Cost": trade.cost}
             for trade in result.trades
         ])
-        st.dataframe(trades, use_container_width=True, hide_index=True)
+        st.dataframe(trades, width="stretch", hide_index=True)
         st.caption(f"Result spec: {result.spec.spec_id} · Dataset: {result.spec.dataset_id}")
 
 
 def _leaderboard(st, service, pd) -> None:
-    _header(st, "KPI leaderboard", "Compare the same parameter revision across the selected universe. Sorting does not label a result as the ‘best’ strategy.")
+    _header(st, "Multi-security test leaderboard", "Run one strategy revision across a selected universe, then compare return and risk context in one detailed research table.")
     batch = st.session_state.active_batch
     if batch is None:
         st.info("Run a local experiment in **Research lab** first.")
@@ -188,7 +246,7 @@ def _leaderboard(st, service, pd) -> None:
     tiles[0].metric("Universe size", len(frame))
     tiles[1].metric("Parameter revision", batch.parameter_revision_id[-8:])
     tiles[2].metric("Dataset basis", "Fixture / 1d")
-    st.dataframe(frame, use_container_width=True, hide_index=True)
+    st.dataframe(frame, width="stretch", hide_index=True, height=330)
     if len(frame) > 1:
         st.bar_chart(frame.set_index("Instrument")[["Net P&L"]], height=260)
     st.download_button("Download fixture leaderboard CSV", frame.to_csv(index=False), "fixture_leaderboard.csv", "text/csv")
@@ -198,14 +256,62 @@ def _leaderboard(st, service, pd) -> None:
              "Universe": len(item.results), "Created": item.created_at}
             for item in st.session_state.history
         ])
-        st.dataframe(history.iloc[::-1], use_container_width=True, hide_index=True)
+        st.dataframe(history.iloc[::-1], width="stretch", hide_index=True)
+
+
+def _strategies(st, pd) -> None:
+    _header(st, "Strategy manager", "Keep strategy definitions, parameter revisions and evaluation state visible. Only the SMA crossover implementation is currently available in fixture mode.")
+    catalog = pd.DataFrame([
+        {"Strategy": "SMA crossover", "Family": "Trend", "Revision model": "Immutable parameter revision", "Status": "Available in fixture mode", "Current controls": "Fast/slow windows"},
+        {"Strategy": "EMA crossover", "Family": "Trend", "Revision model": "Planned", "Status": "Not implemented", "Current controls": "—"},
+        {"Strategy": "RSI mean reversion", "Family": "Mean reversion", "Revision model": "Planned", "Status": "Not implemented", "Current controls": "—"},
+        {"Strategy": "MACD signal", "Family": "Momentum", "Revision model": "Planned", "Status": "Not implemented", "Current controls": "—"},
+    ])
+    st.dataframe(catalog, hide_index=True, width="stretch")
+    left, right = st.columns(2)
+    with left:
+        st.subheader("SMA parameter editor")
+        st.number_input("Fast window preview", min_value=2, value=3, step=1, disabled=True)
+        st.number_input("Slow window preview", min_value=4, value=6, step=1, disabled=True)
+        st.info("Save a real revision by using the Backtesting page. This prevents dashboard-only edits from bypassing the application service.")
+    with right:
+        st.subheader("Evaluation status")
+        st.metric("Active research implementation", "1")
+        st.metric("Available historical experiment", len(st.session_state.history))
+        st.caption("No performance scores are invented here. KPI values appear only after an actual local experiment run.")
+
+
+def _reporting(st, pd) -> None:
+    _header(st, "Reporting & analytics", "Read the active experiment’s aggregate evidence rather than generating random performance figures.")
+    batch = st.session_state.active_batch
+    if batch is None:
+        st.info("Run a multi-security experiment first. Reporting is derived from stored local results only.")
+        return
+    rows = []
+    trades = []
+    for item in batch.results:
+        result = item.backtest
+        rows.append({"Instrument": item.instrument_id.split(":")[-1], "Net P&L": result.metrics.net_pnl, "Return %": result.metrics.total_return_pct, "Max DD %": result.metrics.max_drawdown_pct, "Trades": result.metrics.trade_count})
+        trades.extend({"Instrument": item.instrument_id.split(":")[-1], "Entry": trade.entry_time, "Exit": trade.exit_time, "Net P&L": trade.net_pnl, "Cost": trade.cost} for trade in result.trades)
+    frame = pd.DataFrame(rows)
+    summary = st.columns(4)
+    summary[0].metric("Aggregate net P&L", f"₹{frame['Net P&L'].sum():,.2f}")
+    summary[1].metric("Securities tested", len(frame))
+    summary[2].metric("Completed trades", int(frame["Trades"].sum()))
+    summary[3].metric("Worst drawdown", f"{frame['Max DD %'].min():.2f}%")
+    curves, log = st.tabs(["Equity comparison", "Trade log"])
+    with curves:
+        st.bar_chart(frame.set_index("Instrument")[["Net P&L"]], height=280)
+        st.dataframe(frame, hide_index=True, width="stretch")
+    with log:
+        st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
 
 
 def _paper(st, by_id, pd) -> None:
     from algo_manus.application.paper_execution import PaperExecutionService
     from algo_manus.domain.risk import DeterministicRiskPolicy, OrderIntent, OrderSide, PaperPortfolioSnapshot, RiskLimits
 
-    _header(st, "Paper simulator", "Exercise the real deterministic risk policy and paper-event lifecycle using fixture marks only. No broker request or order is made.")
+    _header(st, "Risk & paper operations", "Use the local risk policy, emergency kill switch and paper-event ledger with fixture marks only. No broker request or order is made.")
     batch = st.session_state.active_batch
     if batch is None:
         st.info("Run a fixture research experiment before using the paper simulator.")
@@ -246,20 +352,20 @@ def _paper(st, by_id, pd) -> None:
                 {"Time": event.occurred_at, "Event": event.event_type, "Order": event.order_id, "Instrument": by_id[event.instrument_id].symbol}
                 for event in st.session_state.paper_events
             ])
-            st.dataframe(frame.iloc[::-1], use_container_width=True, hide_index=True)
+            st.dataframe(frame.iloc[::-1], width="stretch", hide_index=True)
 
 
-def _safety(st, instruments, pd) -> None:
-    _header(st, "Safety & data boundaries", "The workbench stays useful before broker approval because it uses an explicit fixture mode, never silent fallback data.")
+def _roadmap(st, instruments, pd) -> None:
+    _header(st, "Readiness roadmap", "The workbench stays useful before broker approval because it uses explicit fixture mode, never silent fallback data.")
     st.dataframe(pd.DataFrame([
         {"Control": "Instrument master", "Current state": "Fixture sample only", "Real-data gate": "Approved broker master sync"},
         {"Control": "Research candles", "Current state": "Deterministic local bars", "Real-data gate": "Approved source, freshness and dataset validation"},
         {"Control": "Paper simulator", "Current state": "Local risk/event exercise", "Real-data gate": "Broker-authoritative marks and reconciled state"},
         {"Control": "Live execution", "Current state": "Unavailable", "Real-data gate": "Separate controlled pilot approval"},
-    ]), use_container_width=True, hide_index=True)
-    st.subheader("Fixture universe")
+    ]), width="stretch", hide_index=True)
+    st.subheader("Current local fixture universe")
     st.dataframe(pd.DataFrame([
         {"Symbol": item.symbol, "Name": item.display_name, "Identity": item.instrument_id, "Segment": item.segment}
         for item in instruments
-    ]), use_container_width=True, hide_index=True)
+    ]), width="stretch", hide_index=True)
     st.warning("Fixture results are for workflow testing only. They must not be used to decide whether to buy, sell or deploy a strategy.")
