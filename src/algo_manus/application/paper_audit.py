@@ -62,6 +62,7 @@ class PaperOperationAuditTimelineReadService:
         order_id: str | None = None,
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
+        instrument_id_filter: str | None = None,
     ) -> tuple[LocalPaperOperationAuditRow, ...]:
         if limit <= 0:
             raise ValueError("limit must be positive")
@@ -102,11 +103,13 @@ class PaperOperationAuditTimelineReadService:
                     ),
                 )
             )
+        instrument_scope = self._instrument_scope(instrument_id_filter, rows)
         return tuple(
             row
             for row in rows
             if self._matches_integrity_scope(row, integrity_scope)
             and self._matches_event_type_scope(row, event_type_scope)
+            and self._matches_instrument_scope(row, instrument_scope)
         )
 
     def integrity(
@@ -115,12 +118,14 @@ class PaperOperationAuditTimelineReadService:
         order_id: str | None = None,
         integrity_filter: str | None = None,
         event_type_filter: str | None = None,
+        instrument_id_filter: str | None = None,
     ) -> LocalPaperOperationAuditIntegritySummary:
         rows = self.rows(
             limit=limit,
             order_id=order_id,
             integrity_filter=integrity_filter,
             event_type_filter=event_type_filter,
+            instrument_id_filter=instrument_id_filter,
         )
         return LocalPaperOperationAuditIntegritySummary(
             total_events=len(rows),
@@ -172,6 +177,25 @@ class PaperOperationAuditTimelineReadService:
     @staticmethod
     def _matches_event_type_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
         return scope == "ALL" or row.event_type == scope
+
+    @staticmethod
+    def _instrument_scope(
+        instrument_id_filter: str | None, rows: list[LocalPaperOperationAuditRow]
+    ) -> str:
+        if instrument_id_filter is None:
+            return "ALL"
+        normalized = instrument_id_filter.strip()
+        if not normalized:
+            raise ValueError("instrument_id_filter must not be blank")
+        if normalized == "ALL":
+            return normalized
+        if normalized not in {row.instrument_id for row in rows}:
+            raise ValueError("unknown instrument_id_filter")
+        return normalized
+
+    @staticmethod
+    def _matches_instrument_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
+        return scope == "ALL" or row.instrument_id == scope
 
     @staticmethod
     def _payload(serialized: str) -> tuple[dict[str, object], bool]:

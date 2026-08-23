@@ -884,6 +884,17 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         "Cancellations": "ORDER_CANCELLED",
                         "Rejections": "ORDER_REJECTED",
                     }[selected_event_type_scope]
+                    retained_instrument_ids = sorted({item.instrument_id for item in all_audit_rows})
+                    selected_instrument_id = st.selectbox(
+                        "Retained local instrument scope",
+                        options=["All retained local instruments", *retained_instrument_ids],
+                        help="Changes only the displayed retained local audit rows; it cannot alter lifecycle, paper-operation or broker state.",
+                    )
+                    instrument_id_filter = (
+                        None
+                        if selected_instrument_id == "All retained local instruments"
+                        else selected_instrument_id
+                    )
                     selected_order_id = (
                         None if selected_audit_order_id == "All retained local orders" else selected_audit_order_id
                     )
@@ -891,11 +902,13 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         order_id=selected_order_id,
                         integrity_filter=integrity_filter,
                         event_type_filter=event_type_filter,
+                        instrument_id_filter=instrument_id_filter,
                     )
                     integrity = paper_audit.integrity(
                         order_id=selected_order_id,
                         integrity_filter=integrity_filter,
                         event_type_filter=event_type_filter,
+                        instrument_id_filter=instrument_id_filter,
                     )
                     if selected_audit_order_id != "All retained local orders":
                         st.caption(f"Showing retained local audit rows for order `{selected_audit_order_id}` only.")
@@ -903,6 +916,8 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         st.caption(f"Showing `{selected_integrity_scope.lower()}` within the selected local audit scope.")
                     if selected_event_type_scope != "All retained event types":
                         st.caption(f"Showing `{selected_event_type_scope.lower()}` within the selected local audit scope.")
+                    if selected_instrument_id != "All retained local instruments":
+                        st.caption(f"Showing retained local audit rows for instrument `{selected_instrument_id}` only.")
                     integrity_tiles = st.columns(4)
                     integrity_tiles[0].metric("Retained events", integrity.total_events)
                     integrity_tiles[1].metric("Valid interpretation", integrity.valid_events)

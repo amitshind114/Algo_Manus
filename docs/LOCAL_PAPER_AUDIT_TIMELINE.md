@@ -39,6 +39,10 @@ The workbench may display all retained events, only `VALID` local interpretation
 
 The workbench may display all retained local event types or one type: `RISK_DECISION`, `ORDER_SUBMITTED`, `ORDER_FILLED`, `ORDER_CANCELLED`, or `ORDER_REJECTED`. A blank or unknown event-type filter is rejected by the application read service. Event-type scope combines with retained-order and integrity scopes only to narrow displayed local rows and totals; it does not alter the local ledger, lifecycle, risk controls, promotion evidence, or any execution state.
 
+## Optional retained instrument scope
+
+The workbench may display all retained local instruments or one retained canonical instrument ID. A blank or unknown instrument filter is rejected by the application read service. Instrument scope combines with retained-order, integrity and event-type scopes only to narrow displayed local rows and totals; it does not alter the local ledger, lifecycle, risk controls, promotion evidence, or any execution state.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.

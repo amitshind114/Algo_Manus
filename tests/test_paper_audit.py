@@ -253,6 +253,37 @@ class PaperOperationAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown"):
             audit.rows(event_type_filter="ORDER_AMENDED")
 
+    def test_instrument_filter_scopes_rows_and_totals_after_restart(self) -> None:
+        self._submit(order_id="paper-audit-instrument-alpha")
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-instrument-bravo",
+                event_type=PaperEventType.RISK_DECISION,
+                occurred_at=self.now + timedelta(minutes=1),
+                order_id="paper-audit-instrument-bravo",
+                instrument_id="FIXTURE:NSE:EQ:BRAVO",
+                payload=json.dumps({"payload": {}}),
+            )
+        )
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        all_rows = restarted.rows(instrument_id_filter="ALL")
+        bravo_rows = restarted.rows(instrument_id_filter="FIXTURE:NSE:EQ:BRAVO")
+        bravo_summary = restarted.integrity(instrument_id_filter="FIXTURE:NSE:EQ:BRAVO")
+
+        self.assertEqual(len(all_rows), 3)
+        self.assertEqual([row.instrument_id for row in bravo_rows], ["FIXTURE:NSE:EQ:BRAVO"])
+        self.assertEqual(bravo_summary.total_events, 1)
+        self.assertEqual(bravo_summary.valid_events, 1)
+
+    def test_instrument_filter_rejects_blank_or_unknown_values(self) -> None:
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "instrument_id_filter"):
+            audit.rows(instrument_id_filter=" ")
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            audit.rows(instrument_id_filter="FIXTURE:NSE:EQ:UNKNOWN")
+
 
 if __name__ == "__main__":
     unittest.main()
