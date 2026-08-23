@@ -854,16 +854,39 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         options=["All retained local orders", *retained_order_ids],
                         help="Changes only the displayed retained local audit rows; it has no paper-operation or broker effect.",
                     )
-                    selected_integrity_scope = st.selectbox(
-                        "Local audit integrity scope",
-                        options=["All retained events", "Valid interpretation only", "Integrity issues only"],
-                        help="Changes only the displayed local audit interpretation rows; it cannot repair, reconcile or affect any paper operation.",
+                    selected_preset = st.selectbox(
+                        "Local audit scope preset",
+                        options=[
+                            "Manual integrity filter",
+                            "All retained events preset",
+                            "Valid interpretations preset",
+                            "Integrity issues preset",
+                        ],
+                        help="Presets only set the local audit integrity dimension; retained order, event, instrument and UTC time filters remain independent and read-only.",
                     )
-                    integrity_filter = {
-                        "All retained events": "ALL",
-                        "Valid interpretation only": "VALID",
-                        "Integrity issues only": "ISSUES",
-                    }[selected_integrity_scope]
+                    preset_identifier = {
+                        "All retained events preset": "ALL",
+                        "Valid interpretations preset": "VALID",
+                        "Integrity issues preset": "ISSUES",
+                    }.get(selected_preset)
+                    if preset_identifier is None:
+                        selected_integrity_scope = st.selectbox(
+                            "Local audit integrity scope",
+                            options=["All retained events", "Valid interpretation only", "Integrity issues only"],
+                            help="Changes only the displayed local audit interpretation rows; it cannot repair, reconcile or affect any paper operation.",
+                        )
+                        integrity_filter = {
+                            "All retained events": "ALL",
+                            "Valid interpretation only": "VALID",
+                            "Integrity issues only": "ISSUES",
+                        }[selected_integrity_scope]
+                    else:
+                        preset = paper_audit.scope_preset(preset_identifier)
+                        selected_integrity_scope = preset.label
+                        integrity_filter = preset.integrity_filter
+                        st.caption(
+                            f"Preset `{preset.label}` sets only the local integrity scope; the remaining local filters stay unchanged."
+                        )
                     selected_event_type_scope = st.selectbox(
                         "Retained local event type",
                         options=[

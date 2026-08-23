@@ -60,6 +60,20 @@ class LocalPaperOperationAuditFilterSummary:
     end_time: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class LocalPaperOperationAuditScopePreset:
+    identifier: str
+    label: str
+    integrity_filter: str
+
+
+LOCAL_PAPER_OPERATION_AUDIT_SCOPE_PRESETS = (
+    LocalPaperOperationAuditScopePreset("ALL", "All retained events", "ALL"),
+    LocalPaperOperationAuditScopePreset("VALID", "Valid interpretations", "VALID"),
+    LocalPaperOperationAuditScopePreset("ISSUES", "Integrity issues", "ISSUES"),
+)
+
+
 class PaperOperationAuditTimelineReadService:
     """Interpret retained local ledger events only; it cannot submit, cancel or modify orders."""
 
@@ -172,6 +186,16 @@ class PaperOperationAuditTimelineReadService:
             start_time=time_window[0],
             end_time=time_window[1],
         )
+
+    @staticmethod
+    def scope_preset(preset_id: str) -> LocalPaperOperationAuditScopePreset:
+        normalized = preset_id.strip().upper()
+        if not normalized:
+            raise ValueError("preset_id must not be blank")
+        for preset in LOCAL_PAPER_OPERATION_AUDIT_SCOPE_PRESETS:
+            if preset.identifier == normalized:
+                return preset
+        raise ValueError("unknown local audit scope preset")
 
     def _events(self, *, limit: int, order_id: str | None) -> tuple[PaperEvent, ...]:
         if order_id is None:

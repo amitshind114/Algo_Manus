@@ -51,6 +51,10 @@ The workbench may display all retained local events or an inclusive UTC start/en
 
 The application read service can return an immutable local summary of the active retained order, integrity, event-type, instrument and UTC time-window scopes. `ALL` denotes an unrestricted dimension, while UTC start/end values are retained exactly as the validated inclusive bounds. The workbench displays this summary only for a valid scope set. It is not an export, broker request, execution instruction, reconciliation result, or repair record.
 
+## Local scope presets
+
+The application read service exposes immutable local presets for `ALL`, `VALID`, and `ISSUES` integrity interpretation scopes. The workbench's preset selector applies only that integrity dimension; retained order, event-type, instrument and UTC time-window controls remain independent. Selecting **Manual integrity filter** instead exposes the existing manual integrity selector. Unknown preset identities are rejected, and a preset never writes, repairs, reconciles, exports, synchronizes or confirms retained events.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.

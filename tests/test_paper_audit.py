@@ -344,6 +344,46 @@ class PaperOperationAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "start_time"):
             audit.filter_summary(start_time=self.now + timedelta(minutes=1), end_time=self.now)
 
+    def test_scope_presets_resolve_all_valid_and_issue_views_after_restart(self) -> None:
+        self._submit(order_id="paper-audit-preset-valid")
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-preset-issue",
+                event_type=PaperEventType.ORDER_FILLED,
+                occurred_at=self.now + timedelta(minutes=1),
+                order_id="paper-audit-preset-issue",
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                payload="not-json",
+            )
+        )
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        all_preset = restarted.scope_preset("ALL")
+        valid_preset = restarted.scope_preset("VALID")
+        issue_preset = restarted.scope_preset("ISSUES")
+
+        self.assertEqual(all_preset.integrity_filter, "ALL")
+        self.assertEqual(valid_preset.label, "Valid interpretations")
+        self.assertEqual(issue_preset.label, "Integrity issues")
+        self.assertEqual(
+            len(restarted.rows(integrity_filter=all_preset.integrity_filter)),
+            3,
+        )
+        self.assertEqual(
+            len(restarted.rows(integrity_filter=valid_preset.integrity_filter)),
+            2,
+        )
+        self.assertEqual(
+            len(restarted.rows(integrity_filter=issue_preset.integrity_filter)),
+            1,
+        )
+
+    def test_scope_preset_rejects_unknown_identity(self) -> None:
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            audit.scope_preset("RECONCILED")
+
 
 if __name__ == "__main__":
     unittest.main()
