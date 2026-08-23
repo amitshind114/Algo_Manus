@@ -60,6 +60,10 @@ This is an engineering and research repository, not a signal-selling, advisory o
 
 The repository now includes the high-level [`docs/ROADMAP.md`](docs/ROADMAP.md) and detailed ten-phase [`docs/MASTER_DELIVERY_PLAN.md`](docs/MASTER_DELIVERY_PLAN.md). After the documentation gate, the next proposed work is to define canonical domain contracts and an executable-free data/instrument research skeleton.
 
+## Architecture reference and MVP preview
+
+The focused static review of Eagle Base and the resulting architecture decision are documented in [`docs/EAGLE_BASE_ARCHITECTURE_REVIEW.md`](docs/EAGLE_BASE_ARCHITECTURE_REVIEW.md). The MVP product flow is in [`docs/MVP_BLUEPRINT.md`](docs/MVP_BLUEPRINT.md), with a browser-openable illustrative sample in [`docs/mvp-preview.html`](docs/mvp-preview.html). These materials define a broker-data-first, source-aware research and paper-operations MVP; they do not add a broker connection or live execution capability.
+
 ## Research basis
 
 The roadmap is informed by the completed cumulative workbook at `indian_market_repo_knowledge.xlsx` and the reviewed repository assessments. The source program assessed reuse potential, not strategy profitability, and retained MIT/third-party licence boundaries. No reviewed repository is being adopted wholesale.
