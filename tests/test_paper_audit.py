@@ -185,6 +185,52 @@ class PaperOperationAuditTests(unittest.TestCase):
         self.assertEqual(summary.malformed_payload_events, 2)
         self.assertEqual(summary.invalid_lifecycle_events, 2)
 
+    def test_integrity_filter_scopes_rows_and_totals_after_restart(self) -> None:
+        self._submit(order_id="paper-audit-filter-valid")
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-filter-payload-invalid",
+                event_type=PaperEventType.RISK_DECISION,
+                occurred_at=self.now + timedelta(minutes=1),
+                order_id="paper-audit-filter-payload-invalid",
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                payload="not-json",
+            )
+        )
+        self.ledger.append(
+            PaperEvent(
+                event_id="EVT-audit-filter-lifecycle-invalid",
+                event_type=PaperEventType.ORDER_FILLED,
+                occurred_at=self.now + timedelta(minutes=2),
+                order_id="paper-audit-filter-lifecycle-invalid",
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                payload=json.dumps({"payload": {"fill_price": 101}}),
+            )
+        )
+
+        restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
+        all_rows = restarted.rows(integrity_filter="ALL")
+        valid_rows = restarted.rows(integrity_filter="VALID")
+        issue_rows = restarted.rows(integrity_filter="ISSUES")
+        issue_summary = restarted.integrity(integrity_filter="ISSUES")
+
+        self.assertEqual(len(all_rows), 4)
+        self.assertEqual([row.integrity_status for row in valid_rows], ["VALID", "VALID"])
+        self.assertEqual(
+            {row.integrity_status for row in issue_rows},
+            {"MALFORMED_PAYLOAD", "INVALID_LIFECYCLE"},
+        )
+        self.assertEqual(issue_summary.total_events, 2)
+        self.assertEqual(issue_summary.valid_events, 0)
+
+    def test_integrity_filter_rejects_blank_or_unknown_values(self) -> None:
+        audit = PaperOperationAuditTimelineReadService(self.ledger)
+
+        with self.assertRaisesRegex(ValueError, "integrity_filter"):
+            audit.rows(integrity_filter=" ")
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            audit.rows(integrity_filter="incomplete")
+
 
 if __name__ == "__main__":
     unittest.main()

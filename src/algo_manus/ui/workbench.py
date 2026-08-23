@@ -854,52 +854,66 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         options=["All retained local orders", *retained_order_ids],
                         help="Changes only the displayed retained local audit rows; it has no paper-operation or broker effect.",
                     )
-                    audit_rows = (
-                        all_audit_rows
-                        if selected_audit_order_id == "All retained local orders"
-                        else paper_audit.rows(order_id=selected_audit_order_id)
+                    selected_integrity_scope = st.selectbox(
+                        "Local audit integrity scope",
+                        options=["All retained events", "Valid interpretation only", "Integrity issues only"],
+                        help="Changes only the displayed local audit interpretation rows; it cannot repair, reconcile or affect any paper operation.",
+                    )
+                    integrity_filter = {
+                        "All retained events": "ALL",
+                        "Valid interpretation only": "VALID",
+                        "Integrity issues only": "ISSUES",
+                    }[selected_integrity_scope]
+                    selected_order_id = (
+                        None if selected_audit_order_id == "All retained local orders" else selected_audit_order_id
+                    )
+                    audit_rows = paper_audit.rows(
+                        order_id=selected_order_id,
+                        integrity_filter=integrity_filter,
                     )
                     integrity = paper_audit.integrity(
-                        order_id=(
-                            None
-                            if selected_audit_order_id == "All retained local orders"
-                            else selected_audit_order_id
-                        )
+                        order_id=selected_order_id,
+                        integrity_filter=integrity_filter,
                     )
                     if selected_audit_order_id != "All retained local orders":
                         st.caption(f"Showing retained local audit rows for order `{selected_audit_order_id}` only.")
+                    if selected_integrity_scope != "All retained events":
+                        st.caption(f"Showing `{selected_integrity_scope.lower()}` within the selected local audit scope.")
                     integrity_tiles = st.columns(4)
                     integrity_tiles[0].metric("Retained events", integrity.total_events)
                     integrity_tiles[1].metric("Valid interpretation", integrity.valid_events)
                     integrity_tiles[2].metric("Malformed payload", integrity.malformed_payload_events)
                     integrity_tiles[3].metric("Invalid lifecycle", integrity.invalid_lifecycle_events)
                     st.caption("Integrity is a read-only interpretation of retained local payload shape and lifecycle order. It does not repair, reconcile or confirm any broker or execution state.")
-                    st.dataframe(
-                        pd.DataFrame(
-                            [
-                                {
-                                    "Time": item.occurred_at,
-                                    "Event": item.event_type,
-                                    "Lifecycle state": item.lifecycle_state,
-                                    "Order": item.order_id,
-                                    "Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol if item.instrument_id in by_id else item.instrument_id,
-                                    "Side": item.side or "—",
-                                    "Quantity": item.quantity if item.quantity is not None else "—",
-                                    "Reference price": item.reference_price if item.reference_price is not None else "—",
-                                    "Fill price": item.fill_price if item.fill_price is not None else "—",
-                                    "Decision": item.decision_code or "—",
-                                    "Central gate": item.central_decision_type or "—",
-                                    "Research batch": item.research_batch_id or "—",
-                                    "Research manifest": item.research_manifest_id or "—",
-                                    "Payload valid": item.payload_valid,
-                                    "Audit integrity": item.integrity_status,
-                                }
-                                for item in audit_rows
-                            ]
-                        ),
-                        hide_index=True,
-                        width="stretch",
-                    )
+                    if not audit_rows:
+                        st.info("No retained local audit rows match the selected integrity scope.")
+                    else:
+                        st.dataframe(
+                            pd.DataFrame(
+                                [
+                                    {
+                                        "Time": item.occurred_at,
+                                        "Event": item.event_type,
+                                        "Lifecycle state": item.lifecycle_state,
+                                        "Order": item.order_id,
+                                        "Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol if item.instrument_id in by_id else item.instrument_id,
+                                        "Side": item.side or "—",
+                                        "Quantity": item.quantity if item.quantity is not None else "—",
+                                        "Reference price": item.reference_price if item.reference_price is not None else "—",
+                                        "Fill price": item.fill_price if item.fill_price is not None else "—",
+                                        "Decision": item.decision_code or "—",
+                                        "Central gate": item.central_decision_type or "—",
+                                        "Research batch": item.research_batch_id or "—",
+                                        "Research manifest": item.research_manifest_id or "—",
+                                        "Payload valid": item.payload_valid,
+                                        "Audit integrity": item.integrity_status,
+                                    }
+                                    for item in audit_rows
+                                ]
+                            ),
+                            hide_index=True,
+                            width="stretch",
+                        )
             positions = pd.DataFrame(
                 [
                     {"Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol if item.instrument_id in by_id else item.instrument_id,

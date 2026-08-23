@@ -57,10 +57,14 @@ class PaperOperationAuditTimelineReadService:
         self._ledger = ledger
 
     def rows(
-        self, limit: int = 1_000, order_id: str | None = None
+        self,
+        limit: int = 1_000,
+        order_id: str | None = None,
+        integrity_filter: str | None = None,
     ) -> tuple[LocalPaperOperationAuditRow, ...]:
         if limit <= 0:
             raise ValueError("limit must be positive")
+        integrity_scope = self._integrity_scope(integrity_filter)
         states: dict[str, PaperOrderStatus] = {}
         rows: list[LocalPaperOperationAuditRow] = []
         for event in self._events(limit=limit, order_id=order_id):
@@ -96,12 +100,15 @@ class PaperOperationAuditTimelineReadService:
                     ),
                 )
             )
-        return tuple(rows)
+        return tuple(row for row in rows if self._matches_integrity_scope(row, integrity_scope))
 
     def integrity(
-        self, limit: int = 1_000, order_id: str | None = None
+        self,
+        limit: int = 1_000,
+        order_id: str | None = None,
+        integrity_filter: str | None = None,
     ) -> LocalPaperOperationAuditIntegritySummary:
-        rows = self.rows(limit=limit, order_id=order_id)
+        rows = self.rows(limit=limit, order_id=order_id, integrity_filter=integrity_filter)
         return LocalPaperOperationAuditIntegritySummary(
             total_events=len(rows),
             valid_events=sum(item.integrity_status == "VALID" for item in rows),
@@ -118,6 +125,25 @@ class PaperOperationAuditTimelineReadService:
         if retained_order_id not in self._ledger.order_ids():
             raise ValueError("unknown retained order_id")
         return self._ledger.events_for(retained_order_id)[:limit]
+
+    @staticmethod
+    def _integrity_scope(integrity_filter: str | None) -> str:
+        if integrity_filter is None:
+            return "ALL"
+        normalized = integrity_filter.strip().upper()
+        if not normalized:
+            raise ValueError("integrity_filter must not be blank")
+        if normalized not in {"ALL", "VALID", "ISSUES"}:
+            raise ValueError("unknown integrity_filter")
+        return normalized
+
+    @staticmethod
+    def _matches_integrity_scope(row: LocalPaperOperationAuditRow, scope: str) -> bool:
+        if scope == "ALL":
+            return True
+        if scope == "VALID":
+            return row.integrity_status == "VALID"
+        return row.integrity_status != "VALID"
 
     @staticmethod
     def _payload(serialized: str) -> tuple[dict[str, object], bool]:

@@ -31,6 +31,10 @@ The workbench may display all retained local audit rows or rows for one selected
 
 The workbench displays total retained events, valid interpretations, malformed payloads and invalid lifecycle transitions for the selected scope. Malformed-payload and invalid-lifecycle totals may overlap when one event has both conditions. These fields only describe the current local reader interpretation; they never repair, remove, amend, reconcile, or confirm the retained events.
 
+## Optional integrity scope
+
+The workbench may display all retained events, only `VALID` local interpretations, or only local integrity issues. The issue-only scope includes every non-`VALID` status, including events with both a malformed payload and invalid lifecycle. A blank or unknown integrity filter is rejected by the application read service. Integrity scope changes only the displayed retained local rows and totals; it does not repair, alter, export, synchronize or confirm events.
+
 ## Limits
 
 Timeline state is derived from the current retained ledger sequence. It is not broker acknowledgement, account reconciliation, venue execution confirmation, market-data evidence, price validation, or a trading recommendation. A valid local payload does not prove external execution.
