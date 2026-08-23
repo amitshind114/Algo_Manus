@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from algo_manus.application.leaderboard import LeaderboardSort
+
+def leaderboard_sort_options() -> dict[str, LeaderboardSort]:
+    """Keep the KPI sort mapping importable and testable outside Streamlit."""
+    return {
+        "Net P&L": LeaderboardSort.NET_PNL,
+        "Return": LeaderboardSort.TOTAL_RETURN,
+        "Drawdown": LeaderboardSort.MAX_DRAWDOWN,
+        "Profit factor": LeaderboardSort.PROFIT_FACTOR,
+        "Win rate": LeaderboardSort.WIN_RATE,
+    }
+
 
 def run_workbench(st) -> None:
     import pandas as pd
 
     from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
-    from algo_manus.application.leaderboard import LeaderboardSort
-
     _style(st)
     service = FixtureWorkbenchService()
     instruments = service.instruments()
@@ -166,7 +176,7 @@ def _leaderboard(st, service, pd) -> None:
     if batch is None:
         st.info("Run a local experiment in **Research lab** first.")
         return
-    options = {"Net P&L": LeaderboardSort.NET_PNL, "Return": LeaderboardSort.TOTAL_RETURN, "Drawdown": LeaderboardSort.MAX_DRAWDOWN, "Profit factor": LeaderboardSort.PROFIT_FACTOR, "Win rate": LeaderboardSort.WIN_RATE}
+    options = leaderboard_sort_options()
     rows = service.leaderboard(batch, options[st.selectbox("Sort by", list(options))])
     frame = pd.DataFrame([
         {"Instrument": row.instrument_id.split(":")[-1], "Net P&L": row.net_pnl, "Return %": row.total_return_pct,

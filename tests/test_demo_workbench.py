@@ -4,6 +4,7 @@ import unittest
 
 from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
 from algo_manus.application.leaderboard import LeaderboardSort
+from algo_manus.ui.workbench import leaderboard_sort_options
 
 
 class FixtureWorkbenchTests(unittest.TestCase):
@@ -38,6 +39,13 @@ class FixtureWorkbenchTests(unittest.TestCase):
                 commission_bps=10,
                 slippage_bps=5,
             )
+
+    def test_leaderboard_sort_options_resolve_without_streamlit(self) -> None:
+        options = leaderboard_sort_options()
+
+        self.assertEqual(options["Net P&L"], LeaderboardSort.NET_PNL)
+        self.assertEqual(options["Return"], LeaderboardSort.TOTAL_RETURN)
+        self.assertEqual(options["Drawdown"], LeaderboardSort.MAX_DRAWDOWN)
 
 
 if __name__ == "__main__":
