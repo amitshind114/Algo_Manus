@@ -60,9 +60,9 @@ This is an engineering and research repository, not a signal-selling, advisory o
 
 The repository now includes the high-level [`docs/ROADMAP.md`](docs/ROADMAP.md) and detailed ten-phase [`docs/MASTER_DELIVERY_PLAN.md`](docs/MASTER_DELIVERY_PLAN.md). After the documentation gate, the next proposed work is to define canonical domain contracts and an executable-free data/instrument research skeleton.
 
-## Architecture reference and MVP preview
+## Local MVP workflow and preview
 
-The focused static review of Eagle Base and the resulting architecture decision are documented in [`docs/EAGLE_BASE_ARCHITECTURE_REVIEW.md`](docs/EAGLE_BASE_ARCHITECTURE_REVIEW.md). The MVP product flow is in [`docs/MVP_BLUEPRINT.md`](docs/MVP_BLUEPRINT.md), with a browser-openable illustrative sample in [`docs/mvp-preview.html`](docs/mvp-preview.html). These materials define a broker-data-first, source-aware research and paper-operations MVP; they do not add a broker connection or live execution capability.
+The product-facing local research and paper-trading workflow is documented in [`docs/LOCAL_MVP_WORKFLOW.md`](docs/LOCAL_MVP_WORKFLOW.md). The supporting MVP product flow is in [`docs/MVP_BLUEPRINT.md`](docs/MVP_BLUEPRINT.md), with a browser-openable illustrative sample in [`docs/mvp-preview.html`](docs/mvp-preview.html). These materials define a broker-data-first, source-aware research and paper-operations MVP; they do not add a broker connection or live execution capability.
 
 ## Research basis
 
