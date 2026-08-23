@@ -27,6 +27,23 @@ class PaperEventType(StrEnum):
     ORDER_CANCELLED = "ORDER_CANCELLED"
 
 
+@dataclass(frozen=True, slots=True)
+class PaperPromotionEvidence:
+    """Immutable references proving that one local paper proposal came from research evidence."""
+
+    batch_id: str
+    manifest_id: str
+    dataset_id: str
+    validation_policy_version: str
+
+    def __post_init__(self) -> None:
+        if any(
+            not value.strip()
+            for value in (self.batch_id, self.manifest_id, self.dataset_id, self.validation_policy_version)
+        ):
+            raise ValueError("paper promotion evidence identifiers are required")
+
+
 class PaperOrderLifecycle:
     """Valid state transitions for one local paper order identity."""
 

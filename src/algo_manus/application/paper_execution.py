@@ -14,6 +14,7 @@ from algo_manus.domain.paper import (
     PaperOrder,
     PaperOrderLifecycle,
     PaperOrderStatus,
+    PaperPromotionEvidence,
     PaperSubmission,
 )
 from algo_manus.domain.risk import (
@@ -52,11 +53,13 @@ class PaperExecutionService:
         ledger: PaperLedgerPort,
         central_policy: CentralRiskPolicy,
         central_engine: CentralRiskEngine | None = None,
+        require_promotion_evidence: bool = False,
     ) -> None:
         self._policy = policy
         self._ledger = ledger
         self._central_policy = central_policy
         self._central_engine = central_engine or CentralRiskEngine()
+        self._require_promotion_evidence = require_promotion_evidence
 
     def submit(
         self,
@@ -69,6 +72,7 @@ class PaperExecutionService:
         instrument_status: InstrumentStatus | None,
         validation_outcome: DatasetValidationOutcome | None,
         portfolio_risk: PortfolioRiskSnapshot | None = None,
+        promotion_evidence: PaperPromotionEvidence | None = None,
         control_snapshot: RiskControlSnapshot | None = None,
         now: datetime | None = None,
     ) -> PaperSubmission:
@@ -104,6 +108,8 @@ class PaperExecutionService:
                 central_decision.reason,
             )
         )
+        if self._require_promotion_evidence and promotion_evidence is None:
+            decision = RiskDecision(False, "RESEARCH_EVIDENCE_MISSING", "persisted research promotion evidence is required")
         self._append_event(
             PaperEventType.RISK_DECISION,
             intent,
@@ -123,6 +129,12 @@ class PaperExecutionService:
                 "central_decision_type": central_decision.decision_type.value,
                 "central_decision_code": central_decision.code.value,
                 "central_reason": central_decision.reason,
+                "research_batch_id": promotion_evidence.batch_id if promotion_evidence is not None else None,
+                "research_manifest_id": promotion_evidence.manifest_id if promotion_evidence is not None else None,
+                "research_dataset_id": promotion_evidence.dataset_id if promotion_evidence is not None else None,
+                "research_validation_policy_version": (
+                    promotion_evidence.validation_policy_version if promotion_evidence is not None else None
+                ),
             },
         )
         if not decision.allowed:

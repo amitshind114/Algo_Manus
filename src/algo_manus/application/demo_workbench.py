@@ -10,11 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from pathlib import Path
 from typing import Mapping
 
 from algo_manus.application.backtesting import BarBacktestService
+from algo_manus.application.experiment_evidence import ExperimentEvidenceReadService
 from algo_manus.application.experiments import BatchBacktestRequest, ExperimentBatchService
 from algo_manus.application.leaderboard import LeaderboardService, LeaderboardSort
+from algo_manus.application.paper_promotion import PaperResearchPromotionService
 from algo_manus.domain.experiment import ExperimentBatch
 from algo_manus.domain.market_data import (
     Candle,
@@ -83,6 +86,17 @@ class FixtureWorkbenchService:
         "FIXTURE:NSE:EQ:EMBER": ("EMBER", "Fixture Ember Consumer"),
     }
 
+    def __init__(self, data_root: Path | None = None) -> None:
+        if data_root is None:
+            self._batches = _MemoryExperimentRepository()
+            self._manifests = _MemoryResearchManifestRepository()
+        else:
+            from algo_manus.infrastructure.experiments.sqlite_repository import SqliteExperimentBatchRepository
+            from algo_manus.infrastructure.research.sqlite_repository import SqliteResearchEvidenceRepository
+
+            self._batches = SqliteExperimentBatchRepository(data_root / "experiments.sqlite3")
+            self._manifests = SqliteResearchEvidenceRepository(data_root / "research_evidence.sqlite3")
+
     def instruments(self) -> tuple[FixtureInstrument, ...]:
         return tuple(
             FixtureInstrument(instrument_id, symbol, name, "NSE Equity fixture")
@@ -112,8 +126,8 @@ class FixtureWorkbenchService:
         datasets = {instrument_id: self._dataset(instrument_id) for instrument_id in selected_instrument_ids}
         return ExperimentBatchService(
             BarBacktestService(),
-            _MemoryExperimentRepository(),
-            _MemoryResearchManifestRepository(),
+            self._batches,
+            self._manifests,
         ).run(
             request=BatchBacktestRequest(
                 universe_id="fixture-nse-equity-universe",
@@ -128,6 +142,13 @@ class FixtureWorkbenchService:
             parameters=parameters,
             created_at=datetime(2026, 8, 23, 9, 15, tzinfo=timezone.utc),
         )
+
+    def paper_promotion(self, *, batch_id: str, instrument_id: str):
+        """Return exact persisted manifest/validation evidence, or ``None`` when absent."""
+
+        return PaperResearchPromotionService(
+            ExperimentEvidenceReadService(self._batches, self._manifests)
+        ).resolve(batch_id=batch_id, instrument_id=instrument_id)
 
     @staticmethod
     def leaderboard(batch: ExperimentBatch, sort_by: LeaderboardSort):

@@ -36,7 +36,7 @@ def run_workbench(st) -> None:
 
     from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
     _style(st)
-    service = FixtureWorkbenchService()
+    service = FixtureWorkbenchService(_local_data_root())
     control_service = _local_risk_controls()
     paper_ledger = _local_paper_ledger()
     instruments = service.instruments()
@@ -68,7 +68,7 @@ def run_workbench(st) -> None:
     elif page == "Reporting":
         _reporting(st, pd)
     elif page == "Risk & paper":
-        _paper(st, by_id, pd, control_service, paper_ledger)
+        _paper(st, by_id, pd, service, control_service, paper_ledger)
     else:
         _roadmap(st, instruments, pd)
 
@@ -86,7 +86,7 @@ def _local_risk_controls():
     from algo_manus.application.risk_controls import LocalRiskControlService
     from algo_manus.infrastructure.risk import SqliteRiskControlRepository
 
-    data_root = Path(os.environ.get("ALGO_MANUS_DATA_DIR", str(Path.home() / ".algo-manus")))
+    data_root = _local_data_root()
     return LocalRiskControlService(SqliteRiskControlRepository(data_root / "risk_controls.sqlite3"))
 
 
@@ -95,8 +95,12 @@ def _local_paper_ledger():
 
     from algo_manus.infrastructure.paper.sqlite_ledger import SqlitePaperLedger
 
-    data_root = Path(os.environ.get("ALGO_MANUS_DATA_DIR", str(Path.home() / ".algo-manus")))
+    data_root = _local_data_root()
     return SqlitePaperLedger(data_root / "paper_ledger.sqlite3")
+
+
+def _local_data_root() -> Path:
+    return Path(os.environ.get("ALGO_MANUS_DATA_DIR", str(Path.home() / ".algo-manus")))
 
 
 def _sidebar_navigation(st) -> str:
@@ -331,12 +335,11 @@ def _reporting(st, pd) -> None:
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
 
 
-def _paper(st, by_id, pd, control_service, ledger) -> None:
+def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     from algo_manus.application.paper_execution import PaperExecutionService
     from algo_manus.application.paper_projection import PaperOperationsReadService
     from algo_manus.application.paper_risk import PaperPortfolioRiskService
     from algo_manus.domain.instruments import InstrumentStatus
-    from algo_manus.domain.research import DataValidationStatus, DatasetValidationOutcome
     from algo_manus.domain.risk import DeterministicRiskPolicy, OrderIntent, OrderSide, PaperPortfolioSnapshot, RiskLimits
     from algo_manus.domain.risk_engine import CentralRiskPolicy
 
@@ -393,7 +396,12 @@ def _paper(st, by_id, pd, control_service, ledger) -> None:
         side = st.selectbox("Side", [OrderSide.BUY, OrderSide.SELL])
         quantity = st.number_input("Fixture quantity", min_value=1, value=10, step=1)
         mark = st.number_input("Fixture mark", min_value=1.0, value=100.0, step=1.0)
-        submit = st.button("Simulate risk-gated paper order", type="primary")
+        promotion = service.paper_promotion(batch_id=batch.batch_id, instrument_id=instrument_id)
+        if promotion is None:
+            st.error("Paper promotion blocked: the selected experiment/instrument has no persisted accepted research evidence.")
+        else:
+            st.caption(f"Research manifest {promotion[0].manifest_id} · validation {promotion[0].validation_policy_version}")
+        submit = st.button("Simulate risk-gated paper order", type="primary", disabled=promotion is None)
     fixture_marks = {position.instrument_id: position.average_entry_price for position in projection.positions}
     fixture_marks[instrument_id] = mark
     portfolio_risk = PaperPortfolioRiskService().snapshot(projection, marks=fixture_marks)
@@ -403,16 +411,13 @@ def _paper(st, by_id, pd, control_service, ledger) -> None:
                 order_id=f"fixture-paper-{len(paper_operations.events()) + 1}", instrument_id=instrument_id,
                 side=side, quantity=quantity, reference_price=mark, strategy_revision_id=batch.parameter_revision_id,
             )
-            validation = DatasetValidationOutcome(
-                dataset_id=next(item.dataset_id for item in batch.results if item.instrument_id == instrument_id),
-                status=DataValidationStatus.ACCEPTED,
-                policy_version="fixture-paper-context-v1",
-                validated_at=datetime.now(timezone.utc),
-            )
+            assert promotion is not None
+            promotion_evidence, validation = promotion
             execution = PaperExecutionService(
                 DeterministicRiskPolicy(),
                 ledger,
                 snapshot.policy,
+                require_promotion_evidence=True,
             )
             submission = execution.submit(
                 intent=intent,
@@ -428,6 +433,7 @@ def _paper(st, by_id, pd, control_service, ledger) -> None:
                 instrument_status=InstrumentStatus.ACTIVE,
                 validation_outcome=validation,
                 portfolio_risk=portfolio_risk,
+                promotion_evidence=promotion_evidence,
                 control_snapshot=snapshot,
             )
             if submission.decision.allowed:
@@ -481,6 +487,7 @@ def _paper(st, by_id, pd, control_service, ledger) -> None:
                     "Central decision": json.loads(event.payload).get("payload", {}).get("central_decision_type"),
                     "Central code": json.loads(event.payload).get("payload", {}).get("central_decision_code"),
                     "Durable kill change": json.loads(event.payload).get("payload", {}).get("kill_switch_change_id"),
+                    "Research manifest": json.loads(event.payload).get("payload", {}).get("research_manifest_id"),
                 }
                 for event in events
             ])

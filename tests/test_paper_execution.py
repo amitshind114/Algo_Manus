@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from algo_manus.application.paper_execution import PaperExecutionService
-from algo_manus.domain.paper import PaperEventType, PaperOrderStatus
+from algo_manus.domain.paper import PaperEventType, PaperOrderStatus, PaperPromotionEvidence
 from algo_manus.domain.instruments import InstrumentStatus
 from algo_manus.domain.research import DataValidationStatus, DatasetValidationOutcome
 from algo_manus.domain.risk import (
@@ -176,6 +176,58 @@ class PaperExecutionTests(unittest.TestCase):
             self.service.fill(submitted.order, fill_price=100, now=self.now)
         with self.assertRaisesRegex(ValueError, "not currently submitted"):
             self.service.cancel(submitted.order, reason="repeat", now=self.now)
+
+    def test_promotion_configured_service_blocks_missing_persisted_evidence(self) -> None:
+        service = PaperExecutionService(
+            DeterministicRiskPolicy(),
+            self.ledger,
+            CentralRiskPolicy("central-promotion-v1", 100, 1_000, 3),
+            require_promotion_evidence=True,
+        )
+        submission = service.submit(
+            intent=self.intent,
+            portfolio=self.portfolio,
+            marks={self.intent.instrument_id: 100},
+            limits=self.limits,
+            kill_switch_active=False,
+            **self._central_context(),
+            now=self.now,
+        )
+
+        self.assertFalse(submission.decision.allowed)
+        self.assertEqual(submission.decision.code, "RESEARCH_EVIDENCE_MISSING")
+        self.assertEqual(submission.order.status, PaperOrderStatus.REJECTED)
+        self.assertIn('"research_manifest_id":null', self.ledger.events_for(self.intent.order_id)[0].payload)
+
+    def test_promotion_configured_service_records_exact_evidence_identifiers(self) -> None:
+        service = PaperExecutionService(
+            DeterministicRiskPolicy(),
+            self.ledger,
+            CentralRiskPolicy("central-promotion-evidence-v1", 100, 1_000, 3),
+            require_promotion_evidence=True,
+        )
+        evidence = PaperPromotionEvidence(
+            batch_id="EXP-promotion",
+            manifest_id="RUN-promotion",
+            dataset_id=self.validation.dataset_id,
+            validation_policy_version=self.validation.policy_version,
+        )
+        submission = service.submit(
+            intent=self.intent,
+            portfolio=self.portfolio,
+            marks={self.intent.instrument_id: 100},
+            limits=self.limits,
+            kill_switch_active=False,
+            promotion_evidence=evidence,
+            **self._central_context(),
+            now=self.now,
+        )
+
+        payload = self.ledger.events_for(self.intent.order_id)[0].payload
+        self.assertTrue(submission.decision.allowed)
+        self.assertIn('"research_batch_id":"EXP-promotion"', payload)
+        self.assertIn('"research_manifest_id":"RUN-promotion"', payload)
+        self.assertIn('"research_dataset_id":"DATA-paper-fixture"', payload)
 
 
 if __name__ == "__main__":
