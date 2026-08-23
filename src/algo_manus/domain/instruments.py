@@ -67,9 +67,16 @@ class Instrument:
         missing = [name for name, value in required.items() if not str(value).strip()]
         if missing:
             raise ValueError(f"Instrument requires non-empty fields: {', '.join(missing)}")
+        if self.instrument_type in {InstrumentType.FUTURE, InstrumentType.OPTION}:
+            if self.expiry is None:
+                raise ValueError("Derivative instrument requires expiry")
+            if self.lot_size is None or self.tick_size is None:
+                raise ValueError("Derivative instrument requires lot_size and tick_size")
         if self.instrument_type is InstrumentType.OPTION:
-            if self.expiry is None or self.strike is None or self.option_type is None:
-                raise ValueError("Option instrument requires expiry, strike and option_type")
+            if self.strike is None or self.strike <= 0 or self.option_type is None:
+                raise ValueError("Option instrument requires positive strike and option_type")
+        elif self.strike is not None or self.option_type is not None:
+            raise ValueError("strike and option_type are only valid for option instruments")
         if self.lot_size is not None and self.lot_size <= 0:
             raise ValueError("lot_size must be positive when supplied")
         if self.tick_size is not None and self.tick_size <= 0:
@@ -81,6 +88,23 @@ class Instrument:
             part.strip().upper()
             for part in (self.broker, self.exchange, self.segment, self.broker_token)
         )
+
+    @property
+    def is_derivative(self) -> bool:
+        """Return whether this canonical record represents a dated contract."""
+
+        return self.instrument_type in {InstrumentType.FUTURE, InstrumentType.OPTION}
+
+    @property
+    def contract_descriptor(self) -> str:
+        """Return a display-safe derivative descriptor; never use it as identity."""
+
+        if not self.is_derivative:
+            return self.trading_symbol
+        descriptor = f"{self.trading_symbol} {self.expiry.isoformat()}"
+        if self.instrument_type is InstrumentType.OPTION:
+            return f"{descriptor} {self.strike:g} {self.option_type.value}"
+        return descriptor
 
 
 @dataclass(frozen=True, slots=True)
