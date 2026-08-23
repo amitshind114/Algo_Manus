@@ -12,6 +12,7 @@ from algo_manus.domain.paper import (
     PaperEvent,
     PaperEventType,
     PaperOrder,
+    PaperOrderLifecycle,
     PaperOrderStatus,
     PaperSubmission,
 )
@@ -37,6 +38,8 @@ class PaperLedgerPort(Protocol):
     def append(self, event: PaperEvent) -> None: ...
 
     def order_ids(self) -> frozenset[str]: ...
+
+    def events_for(self, order_id: str) -> tuple[PaperEvent, ...]: ...
 
 
 class PaperExecutionService:
@@ -150,8 +153,7 @@ class PaperExecutionService:
         return PaperSubmission(order=order, decision=decision, central_decision=central_decision)
 
     def fill(self, order: PaperOrder, *, fill_price: float, now: datetime | None = None) -> PaperOrder:
-        if order.status is not PaperOrderStatus.SUBMITTED:
-            raise ValueError("only submitted paper orders can be filled")
+        self._require_submitted(order)
         if fill_price <= 0:
             raise ValueError("paper fill price must be positive")
         occurred_at = now or datetime.now(timezone.utc)
@@ -175,6 +177,40 @@ class PaperExecutionService:
             },
         )
         return filled
+
+    def cancel(self, order: PaperOrder, *, reason: str, now: datetime | None = None) -> PaperOrder:
+        """Cancel one still-submitted local paper order; it cannot contact an external venue."""
+
+        self._require_submitted(order)
+        if not reason.strip():
+            raise ValueError("local cancellation reason is required")
+        occurred_at = now or datetime.now(timezone.utc)
+        cancelled = PaperOrder(intent=order.intent, status=PaperOrderStatus.CANCELLED, submitted_at=order.submitted_at)
+        self._append_event(
+            PaperEventType.ORDER_CANCELLED,
+            order.intent,
+            occurred_at,
+            {
+                "reason": reason,
+                "side": order.intent.side.value,
+                "quantity": order.intent.quantity,
+                "reference_price": order.intent.reference_price,
+                "paper_only": True,
+            },
+        )
+        return cancelled
+
+    def _require_submitted(self, order: PaperOrder) -> None:
+        if order.status is not PaperOrderStatus.SUBMITTED:
+            raise ValueError("only submitted paper orders can transition")
+        status = PaperOrderStatus.PENDING_RISK
+        for event in self._ledger.events_for(order.intent.order_id):
+            next_status = PaperOrderLifecycle.apply(status, event.event_type)
+            if next_status is None:
+                raise ValueError("stored paper lifecycle is invalid; refusing local transition")
+            status = next_status
+        if status is not PaperOrderStatus.SUBMITTED:
+            raise ValueError("paper order is not currently submitted; duplicate or terminal transition blocked")
 
     def _append_event(
         self,

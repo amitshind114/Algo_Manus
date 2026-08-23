@@ -27,6 +27,25 @@ class PaperEventType(StrEnum):
     ORDER_CANCELLED = "ORDER_CANCELLED"
 
 
+class PaperOrderLifecycle:
+    """Valid state transitions for one local paper order identity."""
+
+    _TRANSITIONS = {
+        (PaperOrderStatus.PENDING_RISK, PaperEventType.ORDER_SUBMITTED): PaperOrderStatus.SUBMITTED,
+        (PaperOrderStatus.PENDING_RISK, PaperEventType.ORDER_REJECTED): PaperOrderStatus.REJECTED,
+        (PaperOrderStatus.SUBMITTED, PaperEventType.ORDER_FILLED): PaperOrderStatus.FILLED,
+        (PaperOrderStatus.SUBMITTED, PaperEventType.ORDER_CANCELLED): PaperOrderStatus.CANCELLED,
+    }
+
+    @classmethod
+    def apply(cls, current: PaperOrderStatus, event_type: PaperEventType) -> PaperOrderStatus | None:
+        """Return the next state or ``None`` when the local event is out of sequence."""
+
+        if event_type is PaperEventType.RISK_DECISION:
+            return current
+        return cls._TRANSITIONS.get((current, event_type))
+
+
 @dataclass(frozen=True, slots=True)
 class PaperOrder:
     intent: OrderIntent

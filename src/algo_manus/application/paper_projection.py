@@ -9,6 +9,7 @@ from typing import Protocol
 from algo_manus.domain.paper import (
     PaperEvent,
     PaperEventType,
+    PaperOrderLifecycle,
     PaperOrderProjection,
     PaperOrderStatus,
     PaperPortfolioProjection,
@@ -57,26 +58,39 @@ class PaperPortfolioProjector:
             order = orders.setdefault(event.order_id, _MutableOrder(instrument_id=event.instrument_id))
             side = self._side(payload)
             quantity = self._quantity(payload)
-            if side is not None:
+            if side is not None and order.side is None:
                 order.side = side
-            if quantity is not None:
+            if quantity is not None and order.quantity is None:
                 order.quantity = quantity
 
+            next_status = PaperOrderLifecycle.apply(order.status, event.event_type)
+            if next_status is None:
+                unprojectable.append(event.event_id)
+                continue
             if event.event_type is PaperEventType.ORDER_REJECTED:
-                order.status = PaperOrderStatus.REJECTED
+                order.status = next_status
+                continue
+            if event.event_type is PaperEventType.ORDER_CANCELLED:
+                order.status = next_status
                 continue
             if event.event_type is PaperEventType.ORDER_SUBMITTED:
                 if side is None or quantity is None:
                     unprojectable.append(event.event_id)
                     continue
-                order.status = PaperOrderStatus.SUBMITTED
+                order.status = next_status
                 order.submitted_at = event.occurred_at
                 continue
             if event.event_type is not PaperEventType.ORDER_FILLED:
                 continue
 
             fill_price = payload.get("fill_price")
-            if side is None or quantity is None or not isinstance(fill_price, (int, float)) or fill_price <= 0:
+            if (
+                side is None
+                or quantity is None
+                or quantity != order.quantity
+                or not isinstance(fill_price, (int, float))
+                or fill_price <= 0
+            ):
                 unprojectable.append(event.event_id)
                 continue
             position = positions.setdefault(event.instrument_id, _MutablePosition())
@@ -96,7 +110,7 @@ class PaperPortfolioProjector:
                 position.quantity -= quantity
                 if position.quantity == 0:
                     position.average_entry_price = 0.0
-            order.status = PaperOrderStatus.FILLED
+            order.status = next_status
             order.filled_at = event.occurred_at
             order.fill_price = float(fill_price)
 

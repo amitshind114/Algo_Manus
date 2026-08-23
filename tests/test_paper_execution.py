@@ -155,6 +155,28 @@ class PaperExecutionTests(unittest.TestCase):
         self.assertEqual(duplicate.central_decision.code, RiskDecisionCode.DUPLICATE_INTENT)
         self.assertEqual(duplicate.order.status, PaperOrderStatus.REJECTED)
 
+    def test_cancelled_order_cannot_be_filled_or_cancelled_twice(self) -> None:
+        submitted = self.service.submit(
+            intent=self.intent,
+            portfolio=self.portfolio,
+            marks={self.intent.instrument_id: 100},
+            limits=self.limits,
+            kill_switch_active=False,
+            **self._central_context(),
+            now=self.now,
+        )
+        cancelled = self.service.cancel(submitted.order, reason="fixture operator cancelled local proposal", now=self.now)
+
+        self.assertEqual(cancelled.status, PaperOrderStatus.CANCELLED)
+        self.assertEqual(
+            [event.event_type for event in self.ledger.events_for(self.intent.order_id)],
+            [PaperEventType.RISK_DECISION, PaperEventType.ORDER_SUBMITTED, PaperEventType.ORDER_CANCELLED],
+        )
+        with self.assertRaisesRegex(ValueError, "not currently submitted"):
+            self.service.fill(submitted.order, fill_price=100, now=self.now)
+        with self.assertRaisesRegex(ValueError, "not currently submitted"):
+            self.service.cancel(submitted.order, reason="repeat", now=self.now)
+
 
 if __name__ == "__main__":
     unittest.main()
