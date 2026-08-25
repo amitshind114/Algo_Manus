@@ -155,3 +155,19 @@ class SqliteCandleDatasetRepository:
                 for row in candle_rows
             ),
         )
+
+    def latest(self, *, source_name: str) -> CandleDataset | None:
+        """Return the newest retained dataset for one source without refreshing it."""
+
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT dataset_id
+                FROM candle_datasets
+                WHERE source_name = ?
+                ORDER BY retrieved_at DESC, dataset_id DESC
+                LIMIT 1
+                """,
+                (source_name,),
+            ).fetchone()
+        return self.get(row["dataset_id"]) if row is not None else None

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 import json
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from algo_manus.application.leaderboard import LeaderboardSort
 
@@ -38,6 +39,7 @@ def run_workbench(st) -> None:
     _style(st)
     service = FixtureWorkbenchService(_local_data_root())
     public_instrument_source = _local_public_instrument_source()
+    historical_candle_source = _local_authenticated_historical_source()
     control_service = _local_risk_controls()
     paper_ledger = _local_paper_ledger()
     instruments = service.instruments()
@@ -59,11 +61,23 @@ def run_workbench(st) -> None:
             "Angel public master: "
             + ("cached locally" if source_status.availability == "available" else "not downloaded")
         )
+        historical_status = historical_candle_source.status()
+        st.caption(
+            "Angel history: "
+            + ("cached locally" if historical_status.availability == "available" else "local configuration required")
+        )
 
     if page == "Overview":
         _overview(st, service, pd)
     elif page == "Data & instruments":
-        _data_and_instruments(st, instruments, by_id, pd, public_instrument_source)
+        _data_and_instruments(
+            st,
+            instruments,
+            by_id,
+            pd,
+            public_instrument_source,
+            historical_candle_source,
+        )
     elif page == "Backtesting":
         _research_lab(st, service, instruments, by_id, pd)
     elif page == "Multi-test leaderboard":
@@ -122,6 +136,22 @@ def _local_public_instrument_source():
     return PublicInstrumentSourceService(
         SqliteInstrumentSnapshotRepository(data_root / "instrument_master.sqlite3"),
         AngelScripMasterProvider(),
+    )
+
+
+def _local_authenticated_historical_source():
+    """Return the manual Option B service; UI rendering never requests broker data."""
+
+    from algo_manus.application.authenticated_historical_source import (
+        AuthenticatedHistoricalCandleService,
+    )
+    from algo_manus.infrastructure.market_data.angel_one import AngelHistoricalCandleProvider
+    from algo_manus.infrastructure.market_data.sqlite_repository import SqliteCandleDatasetRepository
+
+    data_root = _local_data_root()
+    return AuthenticatedHistoricalCandleService(
+        SqliteCandleDatasetRepository(data_root / "market_data.sqlite3"),
+        AngelHistoricalCandleProvider.from_environment(),
     )
 
 
@@ -395,7 +425,14 @@ def _overview(st, service, pd) -> None:
         st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness, and they do not repair any result.")
 
 
-def _data_and_instruments(st, instruments, by_id, pd, public_instrument_source) -> None:
+def _data_and_instruments(
+    st,
+    instruments,
+    by_id,
+    pd,
+    public_instrument_source,
+    historical_candle_source,
+) -> None:
     _header(st, "Data & instruments", "Search the current local universe as you would the future broker-synced instrument master. Manual ticker entry is intentionally not used.")
     source_status = public_instrument_source.status()
     st.subheader("Angel One public instrument master")
@@ -454,6 +491,8 @@ def _data_and_instruments(st, instruments, by_id, pd, public_instrument_source) 
     else:
         st.info("No Angel One master is retained locally yet. Download the public master above to create the first immutable snapshot.")
     st.divider()
+    _historical_candle_panel(st, pd, public_instrument_source, historical_candle_source)
+    st.divider()
     st.subheader("Current fixture research universe")
     table = pd.DataFrame([
         {"Symbol": item.symbol, "Company": item.display_name, "Segment": item.segment, "Instrument identity": item.instrument_id, "Status": "Fixture active"}
@@ -482,6 +521,143 @@ def _data_and_instruments(st, instruments, by_id, pd, public_instrument_source) 
     )
     st.session_state.selected_ids = tuple(chosen)
     st.caption("Fixture research remains separate until an approved historical-data source persists validated datasets. The retained Angel master above does not silently replace this universe.")
+
+
+def _historical_candle_panel(st, pd, public_instrument_source, historical_candle_source) -> None:
+    """Render Option B local evidence controls without direct provider or database I/O."""
+
+    from algo_manus.application.market_data import MarketDataRequest
+    from algo_manus.domain.market_data import DataUseCase
+
+    status = historical_candle_source.status()
+    st.subheader("Angel One authenticated historical candles")
+    left, middle, right = st.columns([1.15, 1.1, 1.6])
+    left.metric(
+        "Historical source",
+        "Cached" if status.availability == "available" else "Not downloaded",
+    )
+    middle.metric("Local configuration", "Ready" if status.credentials_configured else "Required")
+    right.caption("Dataset: " + (status.dataset_id or "No retained candle dataset"))
+    right.caption(
+        "Last retrieved: " + (status.retrieved_at.isoformat() if status.retrieved_at else "Not yet retrieved")
+    )
+    st.caption(
+        "This is a manual, research-only retrieval using a user-managed local app key and existing short-lived access token. "
+        "It cannot sign in, refresh a token, access an account, retrieve live prices, open a WebSocket, submit paper orders or enable execution."
+    )
+    if not status.credentials_configured:
+        st.info(
+            "Local read-only configuration is required before a candle request. Configure the two documented local environment variables yourself; "
+            "do not paste credentials, client code, PIN, TOTP, refresh tokens or access tokens into this workbench or chat."
+        )
+
+    master = public_instrument_source.latest_snapshot()
+    if master is None:
+        st.info("A retained public Angel instrument-master snapshot is required before selecting a broker-backed historical-candle request.")
+        return
+
+    lookup = st.text_input(
+        "Search retained Angel instrument for historical research",
+        placeholder="RELIANCE, NIFTY, SENSEX",
+        key="historical_instrument_lookup",
+    ).strip()
+    if not lookup:
+        st.caption("Search the retained local Angel master to select a canonical instrument identity. Manual ticker entry is not used.")
+        st.button(
+            "Download research candles",
+            type="secondary",
+            disabled=True,
+            key="download_historical_research_candles",
+        )
+        return
+    normalized_lookup = lookup.upper()
+    matches = [
+        item
+        for item in master.instruments
+        if normalized_lookup in item.trading_symbol.upper() or normalized_lookup in item.display_name.upper()
+    ][:100]
+    if not matches:
+        st.warning("No retained Angel instrument matches this local-master search.")
+        return
+    selected_id = st.selectbox(
+        "Retained Angel instrument",
+        [item.instrument_id for item in matches],
+        format_func=lambda instrument_id: next(
+            f"{item.trading_symbol} · {item.exchange} · token {item.broker_token}"
+            for item in matches
+            if item.instrument_id == instrument_id
+        ),
+        key="historical_instrument_id",
+    )
+    controls_left, controls_middle, controls_right = st.columns(3)
+    interval = controls_left.selectbox(
+        "Historical interval",
+        ["1m", "3m", "5m", "10m", "15m", "30m", "1h", "1d"],
+        index=7,
+        key="historical_interval",
+    )
+    market_timezone = ZoneInfo("Asia/Kolkata")
+    today = datetime.now(market_timezone).date()
+    start_date = controls_middle.date_input(
+        "Research start date",
+        value=today - timedelta(days=7),
+        max_value=today,
+        key="historical_start_date",
+    )
+    end_date = controls_right.date_input(
+        "Research end date",
+        value=today,
+        max_value=today,
+        key="historical_end_date",
+    )
+    request_is_valid = start_date < end_date
+    if not request_is_valid:
+        st.error("Research end date must be later than research start date.")
+    download = st.button(
+        "Download research candles",
+        type="secondary",
+        disabled=not status.credentials_configured or not request_is_valid,
+        key="download_historical_research_candles",
+    )
+    if download:
+        request = MarketDataRequest(
+            instrument_id=selected_id,
+            interval=interval,
+            start=datetime.combine(start_date, time(9, 15), tzinfo=market_timezone),
+            end=datetime.combine(end_date, time(15, 30), tzinfo=market_timezone),
+            use_case=DataUseCase.RESEARCH,
+        )
+        try:
+            dataset = historical_candle_source.sync(request)
+        except Exception as exc:
+            st.error(f"Historical candle request was unavailable; no retained dataset changed: {exc}")
+        else:
+            st.success(f"Manual research retrieval retained immutable dataset {dataset.dataset_id}.")
+            st.rerun()
+    preview = historical_candle_source.preview(limit=100)
+    if preview:
+        with st.expander("Retained authenticated historical-candle preview", expanded=False):
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Timestamp": candle.timestamp,
+                            "Open": candle.open,
+                            "High": candle.high,
+                            "Low": candle.low,
+                            "Close": candle.close,
+                            "Volume": candle.volume,
+                        }
+                        for candle in preview
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+                height=280,
+            )
+            st.caption(
+                "Preview is retained research evidence only. It does not replace fixture experiments, establish data quality or enable paper/execution workflows."
+            )
 
 
 def _research_lab(st, service, instruments, by_id, pd) -> None:
