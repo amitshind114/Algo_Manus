@@ -23,3 +23,14 @@
 - [x] Update local configuration guidance and documentation with Option C security limits, rotation/expiry behavior and the remaining capability gates.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option C changes to `main`, then report completion and identify the next approval gate.
+
+## Option D — retained broker historical dataset backtest integration
+
+- [x] Inspect the backtest application, research manifest, experiment evidence and immutable candle-dataset contracts for a safe selected-dataset integration point.
+- [x] Design explicit dataset selection, source/evidence pinning, fixture separation and no-lookahead validation rules.
+- [x] Implement a research-only retained-dataset backtest path without any additional broker request, account, price, WebSocket, scheduler or execution capability.
+- [x] Add deterministic selection, evidence lineage, invalid/unaccepted dataset, no-lookahead and fixture-regression tests.
+- [x] Expose only retained-dataset metadata, selection and bounded research results through application services in the local workbench.
+- [x] Update documentation with Option D data provenance, data-quality caveats, fixture distinction and remaining capability gates.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [x] Commit and push only Option D changes to `main`, then report completion and request the next separate approval.

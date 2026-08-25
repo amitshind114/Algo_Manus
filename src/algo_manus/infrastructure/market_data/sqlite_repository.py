@@ -171,3 +171,25 @@ class SqliteCandleDatasetRepository:
                 (source_name,),
             ).fetchone()
         return self.get(row["dataset_id"]) if row is not None else None
+
+    def list_recent(self, *, source_name: str, limit: int = 20) -> tuple[CandleDataset, ...]:
+        """List bounded immutable retained datasets for one source without refreshing it."""
+
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT dataset_id
+                FROM candle_datasets
+                WHERE source_name = ?
+                ORDER BY retrieved_at DESC, dataset_id DESC
+                LIMIT ?
+                """,
+                (source_name, limit),
+            ).fetchall()
+        return tuple(
+            dataset
+            for row in rows
+            if (dataset := self.get(row["dataset_id"])) is not None
+        )

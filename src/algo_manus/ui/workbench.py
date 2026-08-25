@@ -40,6 +40,7 @@ def run_workbench(st) -> None:
     service = FixtureWorkbenchService(_local_data_root())
     public_instrument_source = _local_public_instrument_source()
     historical_candle_source, angel_session = _local_authenticated_historical_source(st)
+    retained_dataset_backtests = _local_retained_dataset_backtests()
     control_service = _local_risk_controls()
     paper_ledger = _local_paper_ledger()
     instruments = service.instruments()
@@ -82,7 +83,7 @@ def run_workbench(st) -> None:
             angel_session,
         )
     elif page == "Backtesting":
-        _research_lab(st, service, instruments, by_id, pd)
+        _research_lab(st, service, instruments, by_id, pd, retained_dataset_backtests)
     elif page == "Multi-test leaderboard":
         _leaderboard(st, service, pd)
     elif page == "Strategies":
@@ -165,6 +166,22 @@ def _local_authenticated_historical_source(st):
     return (
         st.session_state["angel_historical_source"],
         st.session_state["angel_session_service"],
+    )
+
+
+def _local_retained_dataset_backtests():
+    """Compose Option D local services; rendering never fetches broker data."""
+
+    from algo_manus.application.retained_dataset_backtesting import RetainedDatasetBacktestService
+    from algo_manus.infrastructure.experiments.sqlite_repository import SqliteExperimentBatchRepository
+    from algo_manus.infrastructure.market_data.sqlite_repository import SqliteCandleDatasetRepository
+    from algo_manus.infrastructure.research import SqliteResearchEvidenceRepository
+
+    data_root = _local_data_root()
+    return RetainedDatasetBacktestService(
+        SqliteCandleDatasetRepository(data_root / "market_data.sqlite3"),
+        SqliteExperimentBatchRepository(data_root / "experiments.sqlite3"),
+        SqliteResearchEvidenceRepository(data_root / "research_evidence.sqlite3"),
     )
 
 
@@ -708,7 +725,7 @@ def _historical_candle_panel(
             )
 
 
-def _research_lab(st, service, instruments, by_id, pd) -> None:
+def _research_lab(st, service, instruments, by_id, pd, retained_dataset_backtests) -> None:
     _header(st, "Backtesting engine", "Run a reproducible single or multi-security local experiment with the same practical control layout used in a research terminal.")
     controls, output = st.columns([0.85, 1.55])
     with controls:
@@ -814,6 +831,145 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
             st.dataframe(trades, width="stretch", hide_index=True)
             st.caption(f"Persisted local artifact: {artifacts.result_spec_id}")
         st.caption(f"Result spec: {result.spec.spec_id} · Dataset: {result.spec.dataset_id}")
+    st.divider()
+    _retained_dataset_backtest_panel(st, service, pd, retained_dataset_backtests)
+
+
+def _retained_dataset_backtest_panel(st, service, pd, retained_dataset_backtests) -> None:
+    """Render Option D local evidence selection without direct provider or database I/O."""
+
+    from algo_manus.application.retained_dataset_backtesting import RetainedDatasetBacktestRequest
+
+    st.subheader("Retained Angel historical-dataset backtest")
+    st.caption(
+        "This separate research path uses one explicitly selected immutable local Angel historical dataset. "
+        "It does not refresh data, replace fixture experiments, assess data completeness or enable paper/execution workflows."
+    )
+    datasets = retained_dataset_backtests.available_datasets(limit=20)
+    if not datasets:
+        st.info(
+            "No retained Angel historical dataset is available for this local backtest path. "
+            "First complete a separate manual historical research retrieval; this panel will not request broker data."
+        )
+        return
+    selected_dataset_id = st.selectbox(
+        "Retained Angel research dataset",
+        [item.dataset_id for item in datasets],
+        format_func=lambda dataset_id: next(
+            f"{item.instrument_id} · {item.interval} · {len(item.candles)} bars · {item.provenance.retrieved_at.isoformat()}"
+            for item in datasets
+            if item.dataset_id == dataset_id
+        ),
+        key="retained_dataset_backtest_id",
+    )
+    dataset = next(item for item in datasets if item.dataset_id == selected_dataset_id)
+    metadata_left, metadata_middle, metadata_right = st.columns(3)
+    metadata_left.metric("Instrument", dataset.instrument_id.split(":")[-1])
+    metadata_middle.metric("Interval / bars", f"{dataset.interval} / {len(dataset.candles)}")
+    metadata_right.caption("Raw content SHA-256: " + dataset.provenance.raw_content_sha256)
+    st.caption(
+        "Source: Angel One retained broker historical evidence · Adjustment basis: "
+        + dataset.provenance.adjustment_basis
+        + " · Dataset identity: "
+        + dataset.dataset_id
+    )
+    catalog = service.strategy_catalog()
+    strategy_id = st.selectbox(
+        "Strategy for retained dataset",
+        [metadata.strategy_id for metadata in catalog],
+        format_func=lambda value: next(item.display_name for item in catalog if item.strategy_id == value),
+        key="retained_dataset_strategy_id",
+    )
+    metadata = next(item for item in catalog if item.strategy_id == strategy_id)
+    parameters: dict[str, int | float] = {}
+    columns = st.columns(max(1, min(3, len(metadata.parameter_schema.definitions))))
+    for index, definition in enumerate(metadata.parameter_schema.definitions):
+        column = columns[index % len(columns)]
+        if definition.kind.value == "integer":
+            parameters[definition.name] = column.number_input(
+                definition.description,
+                min_value=int(definition.minimum or 1),
+                max_value=int(definition.maximum or 500),
+                value=int(definition.default),
+                step=1,
+                key=f"retained_strategy_{strategy_id}_{definition.name}",
+            )
+        else:
+            parameters[definition.name] = column.number_input(
+                definition.description,
+                min_value=float(definition.minimum or 0.0),
+                max_value=float(definition.maximum or 100.0),
+                value=float(definition.default),
+                step=0.5,
+                key=f"retained_strategy_{strategy_id}_{definition.name}",
+            )
+    invalid = False
+    try:
+        parameters = dict(service.validate_strategy_parameters(strategy_id, parameters))
+    except ValueError as exc:
+        invalid = True
+        st.error(str(exc))
+    assumptions_left, assumptions_middle, assumptions_right = st.columns(3)
+    capital = assumptions_left.number_input(
+        "Starting cash", min_value=1_000.0, value=100_000.0, step=5_000.0, key="retained_dataset_capital"
+    )
+    quantity = assumptions_middle.number_input(
+        "Simulated quantity", min_value=1, value=100, step=10, key="retained_dataset_quantity"
+    )
+    costs = assumptions_right.columns(2)
+    commission = costs[0].number_input(
+        "Commission (bps)", min_value=0.0, value=10.0, step=1.0, key="retained_dataset_commission"
+    )
+    slippage = costs[1].number_input(
+        "Slippage (bps)", min_value=0.0, value=5.0, step=1.0, key="retained_dataset_slippage"
+    )
+    run = st.button(
+        "Run retained-dataset research backtest",
+        type="primary",
+        disabled=invalid,
+        key="run_retained_dataset_backtest",
+    )
+    if run:
+        try:
+            retained_run = retained_dataset_backtests.run(
+                RetainedDatasetBacktestRequest(
+                    dataset_id=dataset.dataset_id,
+                    strategy_id=strategy_id,
+                    parameters=parameters,
+                    initial_cash=capital,
+                    quantity=quantity,
+                    commission_bps=commission,
+                    slippage_bps=slippage,
+                )
+            )
+        except Exception as exc:
+            st.error(f"Retained-dataset research backtest was unavailable; no fixture experiment was changed: {exc}")
+        else:
+            st.session_state.retained_dataset_run = retained_run
+            st.success(f"Created immutable research batch {retained_run.batch.batch_id}.")
+    retained_run = st.session_state.get("retained_dataset_run")
+    if retained_run is None:
+        return
+    result = retained_run.batch.results[0].backtest
+    st.markdown("#### Retained-dataset result")
+    _render_backtest_outcome(st, result.outcome)
+    result_tiles = st.columns(4)
+    result_tiles[0].metric("Net P&L", f"₹{result.metrics.net_pnl:,.2f}")
+    result_tiles[1].metric("Return", f"{result.metrics.total_return_pct:.2f}%")
+    result_tiles[2].metric("Max drawdown", f"{result.metrics.max_drawdown_pct:.2f}%")
+    result_tiles[3].metric("Trades", result.metrics.trade_count)
+    if result.equity_curve:
+        equity = pd.DataFrame(result.equity_curve, columns=["Timestamp", "Equity"])
+        st.line_chart(equity.set_index("Timestamp"), height=230)
+    st.caption(
+        "Evidence pinned: dataset "
+        + retained_run.dataset.dataset_id
+        + " · manifest "
+        + str(retained_run.batch.research_manifest_id)
+        + " · validation "
+        + retained_run.validation.status.value
+        + ". Signals use available bars and fill only at the next bar open."
+    )
 
 
 def _leaderboard(st, service, pd) -> None:
