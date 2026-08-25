@@ -65,9 +65,23 @@ class StrategyRegistry:
 def built_in_strategies() -> tuple[Strategy, ...]:
     """Return explicit built-ins; no filesystem/module scanning is performed."""
 
+    from algo_manus.strategies.high_value import (
+        BollingerBreakoutStrategy,
+        EmaCrossoverStrategy,
+        MacdSignalStrategy,
+        RsiMeanReversionStrategy,
+        TripleEmaCrossoverStrategy,
+    )
     from algo_manus.strategies.sma_crossover import SmaCrossoverStrategy
 
-    return (SmaCrossoverStrategy(),)
+    return (
+        BollingerBreakoutStrategy(),
+        EmaCrossoverStrategy(),
+        MacdSignalStrategy(),
+        RsiMeanReversionStrategy(),
+        SmaCrossoverStrategy(),
+        TripleEmaCrossoverStrategy(),
+    )
 
 
 def built_in_registry() -> StrategyRegistry:

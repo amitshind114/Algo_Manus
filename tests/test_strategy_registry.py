@@ -19,10 +19,20 @@ class StrategyRegistryTests(unittest.TestCase):
 
         metadata = registry.metadata()
 
-        self.assertEqual(len(metadata), 1)
-        self.assertEqual(metadata[0].strategy_id, "sma_crossover")
-        self.assertEqual(metadata[0].version, "1.0.0")
-        self.assertEqual(metadata[0].parameter_schema.defaults(), {"fast_window": 3, "slow_window": 6})
+        self.assertEqual(
+            {item.strategy_id for item in metadata},
+            {
+                "sma_crossover",
+                "ema_crossover",
+                "rsi_mean_reversion",
+                "macd_signal",
+                "bollinger_breakout",
+                "triple_ema_crossover",
+            },
+        )
+        sma = next(item for item in metadata if item.strategy_id == "sma_crossover")
+        self.assertEqual(sma.version, "1.0.0")
+        self.assertEqual(sma.parameter_schema.defaults(), {"fast_window": 3, "slow_window": 6})
 
     def test_registry_validates_strict_sma_parameters(self) -> None:
         registry = built_in_registry()

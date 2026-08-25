@@ -64,7 +64,7 @@ def run_workbench(st) -> None:
     elif page == "Multi-test leaderboard":
         _leaderboard(st, service, pd)
     elif page == "Strategies":
-        _strategies(st, pd)
+        _strategies(st, service, pd)
     elif page == "Reporting":
         _reporting(st, service, pd)
     elif page == "Risk & paper":
@@ -417,23 +417,57 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
             format_func=lambda instrument_id: f"{by_id[instrument_id].symbol} — {by_id[instrument_id].display_name}",
         )
         st.session_state.selected_ids = tuple(selected)
-        fast = st.slider("Fast SMA window", 2, 6, 3)
-        slow = st.slider("Slow SMA window", 4, 10, 6)
+        catalog = service.strategy_catalog()
+        strategy_ids = [metadata.strategy_id for metadata in catalog]
+        strategy_id = st.selectbox(
+            "Local strategy",
+            strategy_ids,
+            format_func=lambda value: next(item.display_name for item in catalog if item.strategy_id == value),
+        )
+        metadata = next(item for item in catalog if item.strategy_id == strategy_id)
+        parameters: dict[str, int | float] = {}
+        for definition in metadata.parameter_schema.definitions:
+            if definition.kind.value == "integer":
+                parameters[definition.name] = st.number_input(
+                    definition.description,
+                    min_value=int(definition.minimum or 1),
+                    max_value=int(definition.maximum or 500),
+                    value=int(definition.default),
+                    step=1,
+                    key=f"strategy_{strategy_id}_{definition.name}",
+                )
+            else:
+                parameters[definition.name] = st.number_input(
+                    definition.description,
+                    min_value=float(definition.minimum or 0.0),
+                    max_value=float(definition.maximum or 100.0),
+                    value=float(definition.default),
+                    step=0.5,
+                    key=f"strategy_{strategy_id}_{definition.name}",
+                )
+        invalid = False
+        try:
+            parameters = dict(service.validate_strategy_parameters(strategy_id, parameters))
+        except ValueError as exc:
+            invalid = True
+            st.error(str(exc))
         capital = st.number_input("Starting cash per security", min_value=1_000.0, value=100_000.0, step=5_000.0)
         quantity = st.number_input("Simulated quantity", min_value=1, value=100, step=10)
         commission = st.number_input("Commission (bps)", min_value=0.0, value=10.0, step=1.0)
         slippage = st.number_input("Slippage (bps)", min_value=0.0, value=5.0, step=1.0)
-        invalid = fast >= slow
-        if invalid:
-            st.error("Fast SMA must be lower than slow SMA.")
-        run = st.button("Run fixture experiment", type="primary", disabled=invalid or not selected)
-        st.caption("The same SMA revision, costs and data interval are applied to every selected security.")
+        run = st.button("Run local experiment", type="primary", disabled=invalid or not selected)
+        st.caption(f"{metadata.display_name} uses the same validated parameter revision, costs and data interval for every selected security.")
     with output:
         st.subheader("Backtest result")
         if run:
             batch = service.run_experiment(
-                selected_instrument_ids=tuple(selected), fast_window=fast, slow_window=slow,
-                initial_cash=capital, quantity=quantity, commission_bps=commission, slippage_bps=slippage,
+                selected_instrument_ids=tuple(selected),
+                strategy_id=strategy_id,
+                parameters=parameters,
+                initial_cash=capital,
+                quantity=quantity,
+                commission_bps=commission,
+                slippage_bps=slippage,
             )
             st.session_state.active_batch = batch
             st.session_state.history = list(service.recent_experiments())
@@ -516,25 +550,38 @@ def _leaderboard(st, service, pd) -> None:
         st.dataframe(pd.DataFrame(integrity_rows), width="stretch", hide_index=True)
 
 
-def _strategies(st, pd) -> None:
-    _header(st, "Strategy manager", "Keep strategy definitions, parameter revisions and evaluation state visible. Only the SMA crossover implementation is currently available in fixture mode.")
+def _strategies(st, service, pd) -> None:
+    _header(st, "Strategy manager", "Inspect the registered high-value research families and create parameter revisions only through the Backtesting workflow.")
+    metadata = service.strategy_catalog()
     catalog = pd.DataFrame([
-        {"Strategy": "SMA crossover", "Family": "Trend", "Revision model": "Immutable parameter revision", "Status": "Available in fixture mode", "Current controls": "Fast/slow windows"},
-        {"Strategy": "EMA crossover", "Family": "Trend", "Revision model": "Planned", "Status": "Not implemented", "Current controls": "—"},
-        {"Strategy": "RSI mean reversion", "Family": "Mean reversion", "Revision model": "Planned", "Status": "Not implemented", "Current controls": "—"},
-        {"Strategy": "MACD signal", "Family": "Momentum", "Revision model": "Planned", "Status": "Not implemented", "Current controls": "—"},
+        {
+            "Strategy": item.display_name,
+            "Strategy ID": item.strategy_id,
+            "Version": item.version,
+            "Status": "Available — local research",
+            "Parameters": ", ".join(definition.name for definition in item.parameter_schema.definitions),
+            "Risk boundary": item.risk_notes,
+        }
+        for item in metadata
     ])
     st.dataframe(catalog, hide_index=True, width="stretch")
     left, right = st.columns(2)
     with left:
-        st.subheader("SMA parameter editor")
-        st.number_input("Fast window preview", min_value=2, value=3, step=1, disabled=True)
-        st.number_input("Slow window preview", min_value=4, value=6, step=1, disabled=True)
-        st.info("Save a real revision by using the Backtesting page. This prevents dashboard-only edits from bypassing the application service.")
+        selected_id = st.selectbox(
+            "Inspect registered strategy",
+            [item.strategy_id for item in metadata],
+            format_func=lambda value: next(item.display_name for item in metadata if item.strategy_id == value),
+        )
+        selected = next(item for item in metadata if item.strategy_id == selected_id)
+        st.subheader(selected.display_name)
+        st.caption(selected.description)
+        for definition in selected.parameter_schema.definitions:
+            st.caption(f"{definition.name}: default {definition.default}; {definition.description}")
+        st.info("Create and persist a real parameter revision by using the Backtesting page. The strategy manager does not calculate or save dashboard-only results.")
     with right:
         st.subheader("Evaluation status")
-        st.metric("Active research implementation", "1")
-        st.metric("Available historical experiment", len(st.session_state.history))
+        st.metric("Registered research strategies", len(metadata))
+        st.metric("Available historical experiments", len(st.session_state.history))
         st.caption("No performance scores are invented here. KPI values appear only after an actual local experiment run.")
 
 

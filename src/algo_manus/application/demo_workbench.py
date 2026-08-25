@@ -57,7 +57,7 @@ from algo_manus.domain.market_data import (
 )
 from algo_manus.domain.strategy import StrategyParameterRevision
 from algo_manus.domain.research import ResearchRunManifest
-from algo_manus.strategies.sma_crossover import SmaCrossoverStrategy
+from algo_manus.strategies.registry import built_in_registry
 
 FIXTURE_MODE_LABEL = "Fixture mode — deterministic local sample data; not broker or market data"
 
@@ -234,12 +234,26 @@ class FixtureWorkbenchService:
             for instrument_id, (symbol, name) in self._META.items()
         )
 
+    def strategy_catalog(self):
+        """Return display-safe metadata for the explicitly registered local strategies."""
+
+        return built_in_registry().metadata()
+
+    def validate_strategy_parameters(
+        self, strategy_id: str, parameters: Mapping[str, int | float]
+    ) -> Mapping[str, int | float]:
+        """Validate UI-supplied parameters through the shared strategy contract."""
+
+        return built_in_registry().validate_parameters(strategy_id, parameters)
+
     def run_experiment(
         self,
         *,
         selected_instrument_ids: tuple[str, ...],
-        fast_window: int,
-        slow_window: int,
+        fast_window: int | None = None,
+        slow_window: int | None = None,
+        strategy_id: str = "sma_crossover",
+        parameters: Mapping[str, int | float] | None = None,
         initial_cash: float,
         quantity: int,
         commission_bps: float,
@@ -247,13 +261,23 @@ class FixtureWorkbenchService:
     ) -> ExperimentBatch:
         if not selected_instrument_ids:
             raise ValueError("select at least one fixture instrument")
-        if fast_window >= slow_window:
-            raise ValueError("fast window must be smaller than slow window")
         if set(selected_instrument_ids) - set(self._SERIES):
             raise ValueError("selected fixture instrument is unknown")
-        parameters = StrategyParameterRevision.create(
-            "sma_crossover", {"fast_window": fast_window, "slow_window": slow_window}
-        )
+        registry = built_in_registry()
+        strategy = registry.get(strategy_id)
+        if parameters is None:
+            parameters = dict(strategy.metadata.parameter_schema.defaults())
+            if strategy_id == "sma_crossover":
+                if fast_window is None or slow_window is None:
+                    raise ValueError("SMA runs require fast_window and slow_window")
+                parameters.update(fast_window=fast_window, slow_window=slow_window)
+        try:
+            normalized = registry.validate_parameters(strategy_id, parameters)
+        except ValueError as exc:
+            if strategy_id == "sma_crossover" and "fast_window" in str(exc):
+                raise ValueError(f"fast window validation failed: {exc}") from exc
+            raise
+        parameter_revision = StrategyParameterRevision.create(strategy_id, normalized)
         datasets = {instrument_id: self._dataset(instrument_id) for instrument_id in selected_instrument_ids}
         return ExperimentBatchService(
             BarBacktestService(),
@@ -269,8 +293,8 @@ class FixtureWorkbenchService:
                 commission_bps=commission_bps,
                 slippage_bps=slippage_bps,
             ),
-            strategy=SmaCrossoverStrategy(),
-            parameters=parameters,
+            strategy=strategy,
+            parameters=parameter_revision,
             created_at=datetime.now(timezone.utc),
             validated_at=datetime(2026, 8, 23, 9, 15, tzinfo=timezone.utc),
         )
