@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from algo_manus.domain.experiment import ExperimentBatch
+from algo_manus.domain.backtest import BacktestOutcome
 
 
 class LeaderboardSort(StrEnum):
@@ -28,6 +29,7 @@ class LeaderboardRow:
     win_rate_pct: float
     profit_factor: float | None
     data_quality_note: str
+    outcome: BacktestOutcome | None
 
 
 class LeaderboardService:
@@ -46,6 +48,7 @@ class LeaderboardService:
                 win_rate_pct=item.backtest.metrics.win_rate_pct,
                 profit_factor=item.backtest.metrics.profit_factor,
                 data_quality_note=item.data_quality_note,
+                outcome=item.backtest.outcome,
             )
             for item in batch.results
         )

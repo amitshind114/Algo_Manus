@@ -1,9 +1,9 @@
 from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
 from algo_manus.application.demo_workbench import FixtureWorkbenchService
+from tests.sqlite_test_utils import closed_sqlite_connection
 
 
 class EvidenceHealthComparisonTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class EvidenceHealthComparisonTests(unittest.TestCase):
                 commission_bps=1.0,
                 slippage_bps=1.0,
             )
-            with sqlite3.connect(root / "experiments.sqlite3") as connection:
+            with closed_sqlite_connection(root / "experiments.sqlite3") as connection:
                 connection.execute(
                     "UPDATE experiment_result_artifacts SET result_spec_id = 'BT-mismatch' WHERE batch_id = ?",
                     (non_complete.batch_id,),

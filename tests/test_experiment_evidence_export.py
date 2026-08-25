@@ -6,6 +6,7 @@ import unittest
 
 from algo_manus.application.demo_workbench import FixtureWorkbenchService
 from algo_manus.application.experiment_export import EvidenceExportRefusedError
+from tests.sqlite_test_utils import closed_sqlite_connection
 
 
 class ExperimentEvidenceExportTests(unittest.TestCase):
@@ -46,7 +47,7 @@ class ExperimentEvidenceExportTests(unittest.TestCase):
                 commission_bps=1.0,
                 slippage_bps=1.0,
             )
-            with sqlite3.connect(root / "experiments.sqlite3") as connection:
+            with closed_sqlite_connection(root / "experiments.sqlite3") as connection:
                 connection.execute(
                     "UPDATE experiment_result_artifacts SET result_spec_id = 'BT-mismatch' WHERE batch_id = ?",
                     (batch.batch_id,),
@@ -102,7 +103,7 @@ class ExperimentEvidenceExportTests(unittest.TestCase):
             before = json.loads(
                 FixtureWorkbenchService(root).evidence_export(batch_id=batch.batch_id).detailed_json()
             )
-            with sqlite3.connect(root / "experiments.sqlite3") as connection:
+            with closed_sqlite_connection(root / "experiments.sqlite3") as connection:
                 connection.execute(
                     "UPDATE experiment_equity_points SET equity = equity + 1 WHERE batch_id = ? AND sequence = 0",
                     (batch.batch_id,),

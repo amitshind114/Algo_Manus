@@ -17,6 +17,7 @@ from algo_manus.application.evidence_lifecycle import LocalEvidenceLifecycle
 from algo_manus.application.evidence_health import LocalEvidenceHealth
 from algo_manus.application.evidence_health_detail import LocalEvidenceHealthDetail
 from algo_manus.domain.backtest import BacktestMetrics, BacktestResult, BacktestSpec, BacktestTrade
+from algo_manus.domain.backtest import BacktestOutcome, BacktestOutcomeKind
 from algo_manus.domain.experiment import (
     ExperimentBatch,
     ExperimentStatus,
@@ -101,6 +102,13 @@ class SqliteExperimentBatchRepository:
                     exposure_pct REAL,
                     average_holding_period_days REAL,
                     data_quality_note TEXT NOT NULL,
+                    outcome_kind TEXT,
+                    outcome_message TEXT,
+                    available_bar_count INTEGER,
+                    required_history INTEGER,
+                    enter_signal_count INTEGER,
+                    exit_signal_count INTEGER,
+                    completed_trade_count INTEGER,
                     PRIMARY KEY (batch_id, instrument_id),
                     FOREIGN KEY (batch_id) REFERENCES experiment_batches(batch_id)
                 )
@@ -118,9 +126,19 @@ class SqliteExperimentBatchRepository:
                 "turnover_pct",
                 "exposure_pct",
                 "average_holding_period_days",
+                "outcome_kind",
+                "outcome_message",
+                "available_bar_count",
+                "required_history",
+                "enter_signal_count",
+                "exit_signal_count",
+                "completed_trade_count",
             ):
                 if column not in result_columns:
-                    connection.execute(f"ALTER TABLE experiment_results ADD COLUMN {column} REAL")
+                    column_type = "REAL" if column == "average_holding_period_days" else "TEXT"
+                    if column.endswith("_count") or column == "required_history":
+                        column_type = "INTEGER"
+                    connection.execute(f"ALTER TABLE experiment_results ADD COLUMN {column} {column_type}")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS experiment_result_artifacts (
@@ -197,8 +215,10 @@ class SqliteExperimentBatchRepository:
                 (batch_id, instrument_id, dataset_id, spec_id, initial_cash, quantity,
                  commission_bps, slippage_bps, force_close_at_end, net_pnl, total_return_pct,
                  max_drawdown_pct, trade_count, win_rate_pct, profit_factor, cagr_pct, sharpe_ratio,
-                 sortino_ratio, expectancy, turnover_pct, exposure_pct, average_holding_period_days, data_quality_note)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 sortino_ratio, expectancy, turnover_pct, exposure_pct, average_holding_period_days, data_quality_note,
+                 outcome_kind, outcome_message, available_bar_count, required_history, enter_signal_count,
+                 exit_signal_count, completed_trade_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -225,6 +245,13 @@ class SqliteExperimentBatchRepository:
                         item.backtest.metrics.exposure_pct,
                         item.backtest.metrics.average_holding_period_days,
                         item.data_quality_note,
+                        item.backtest.outcome.kind.value if item.backtest.outcome is not None else None,
+                        item.backtest.outcome.message if item.backtest.outcome is not None else None,
+                        item.backtest.outcome.available_bar_count if item.backtest.outcome is not None else None,
+                        item.backtest.outcome.required_history if item.backtest.outcome is not None else None,
+                        item.backtest.outcome.enter_signal_count if item.backtest.outcome is not None else None,
+                        item.backtest.outcome.exit_signal_count if item.backtest.outcome is not None else None,
+                        item.backtest.outcome.completed_trade_count if item.backtest.outcome is not None else None,
                     )
                     for item in batch.results
                 ],
@@ -344,6 +371,19 @@ class SqliteExperimentBatchRepository:
                         turnover_pct=row["turnover_pct"],
                         exposure_pct=row["exposure_pct"],
                         average_holding_period_days=row["average_holding_period_days"],
+                    ),
+                    outcome=(
+                        BacktestOutcome(
+                            kind=BacktestOutcomeKind(row["outcome_kind"]),
+                            message=row["outcome_message"],
+                            available_bar_count=row["available_bar_count"],
+                            required_history=row["required_history"],
+                            enter_signal_count=row["enter_signal_count"],
+                            exit_signal_count=row["exit_signal_count"],
+                            completed_trade_count=row["completed_trade_count"],
+                        )
+                        if row["outcome_kind"] is not None
+                        else None
                     ),
                 ),
                 data_quality_note=row["data_quality_note"],

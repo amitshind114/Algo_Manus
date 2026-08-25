@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from hashlib import sha256
 import json
 
@@ -83,6 +84,39 @@ class BacktestMetrics:
     average_holding_period_days: float | None = None
 
 
+class BacktestOutcomeKind(StrEnum):
+    """Named result states for a completed or preflight backtest evaluation."""
+
+    INSUFFICIENT_HISTORY = "INSUFFICIENT_HISTORY"
+    CALCULATED_NO_TRADES = "CALCULATED_NO_TRADES"
+    CALCULATED_WITH_TRADES = "CALCULATED_WITH_TRADES"
+
+
+@dataclass(frozen=True, slots=True)
+class BacktestOutcome:
+    """Explain a local research calculation without changing its result or evidence."""
+
+    kind: BacktestOutcomeKind
+    message: str
+    available_bar_count: int
+    required_history: int
+    enter_signal_count: int
+    exit_signal_count: int
+    completed_trade_count: int
+
+    def __post_init__(self) -> None:
+        if not self.message.strip():
+            raise ValueError("backtest outcome message is required")
+        if min(
+            self.available_bar_count,
+            self.required_history,
+            self.enter_signal_count,
+            self.exit_signal_count,
+            self.completed_trade_count,
+        ) < 0:
+            raise ValueError("backtest outcome counts cannot be negative")
+
+
 @dataclass(frozen=True, slots=True)
 class BacktestDrawdownPoint:
     """One immutable point on an equity-derived drawdown curve."""
@@ -106,3 +140,4 @@ class BacktestResult:
     equity_curve: tuple[tuple[datetime, float], ...]
     metrics: BacktestMetrics
     drawdown_curve: tuple[BacktestDrawdownPoint, ...] = ()
+    outcome: BacktestOutcome | None = None

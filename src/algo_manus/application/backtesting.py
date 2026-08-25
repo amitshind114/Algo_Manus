@@ -11,6 +11,8 @@ from typing import Sequence
 from algo_manus.domain.backtest import (
     BacktestDrawdownPoint,
     BacktestMetrics,
+    BacktestOutcome,
+    BacktestOutcomeKind,
     BacktestResult,
     BacktestSpec,
     BacktestTrade,
@@ -52,7 +54,8 @@ class BarBacktestService:
             raise ValueError("parameter revision does not match backtest spec")
 
         candles = dataset.candles
-        if len(candles) <= strategy.required_history(parameters.parameters):
+        required_history = strategy.required_history(parameters.parameters)
+        if len(candles) <= required_history:
             raise ValueError("dataset has insufficient history for the strategy")
 
         cash = spec.initial_cash
@@ -60,11 +63,15 @@ class BarBacktestService:
         trades: list[BacktestTrade] = []
         equity_curve: list[tuple[datetime, float]] = []
         exposure_points = 0
+        enter_signal_count = 0
+        exit_signal_count = 0
 
-        for index in range(strategy.required_history(parameters.parameters), len(candles) - 1):
+        for index in range(required_history, len(candles) - 1):
             history = candles[: index + 1]
             signal = strategy.signal(history, parameters.parameters)
             next_candle = candles[index + 1]
+            enter_signal_count += int(signal is SignalAction.ENTER_LONG)
+            exit_signal_count += int(signal is SignalAction.EXIT_LONG)
             if signal is SignalAction.ENTER_LONG and position is None:
                 entry_price = self._apply_slippage(next_candle.open, spec.slippage_bps, is_buy=True)
                 estimated_cost = self._cost(entry_price, spec.quantity, spec.commission_bps)
@@ -94,12 +101,80 @@ class BarBacktestService:
             exposure_points=exposure_points,
             annualization_periods=252 if dataset.interval == "1d" else None,
         )
+        outcome = self._calculated_outcome(
+            available_bar_count=len(candles),
+            required_history=required_history,
+            enter_signal_count=enter_signal_count,
+            exit_signal_count=exit_signal_count,
+            completed_trade_count=len(trades),
+        )
         return BacktestResult(
             spec=spec,
             trades=tuple(trades),
             equity_curve=tuple(equity_curve),
             metrics=metrics,
             drawdown_curve=self._drawdown_curve(spec.initial_cash, equity_curve),
+            outcome=outcome,
+        )
+
+    def explain(
+        self,
+        *,
+        dataset: CandleDataset,
+        strategy: Strategy,
+        parameters: StrategyParameterRevision,
+        result: BacktestResult | None = None,
+    ) -> BacktestOutcome:
+        """Return calculation context without rerunning a strategy or changing evidence."""
+
+        required_history = strategy.required_history(parameters.parameters)
+        available_bar_count = len(dataset.candles)
+        if available_bar_count <= required_history:
+            return BacktestOutcome(
+                kind=BacktestOutcomeKind.INSUFFICIENT_HISTORY,
+                message=(
+                    "Insufficient history — "
+                    f"{available_bar_count} bars available; {required_history + 1} bars required for this strategy revision."
+                ),
+                available_bar_count=available_bar_count,
+                required_history=required_history + 1,
+                enter_signal_count=0,
+                exit_signal_count=0,
+                completed_trade_count=0,
+            )
+        if result is None or result.outcome is None:
+            raise ValueError("a calculated backtest result with outcome context is required")
+        return result.outcome
+
+    @staticmethod
+    def _calculated_outcome(
+        *,
+        available_bar_count: int,
+        required_history: int,
+        enter_signal_count: int,
+        exit_signal_count: int,
+        completed_trade_count: int,
+    ) -> BacktestOutcome:
+        if completed_trade_count:
+            message = f"Calculated successfully — {completed_trade_count} completed trade(s) were produced."
+            kind = BacktestOutcomeKind.CALCULATED_WITH_TRADES
+        elif enter_signal_count == 0:
+            message = "Calculated successfully — no eligible SMA crossover occurred in the selected data window."
+            kind = BacktestOutcomeKind.CALCULATED_NO_TRADES
+        else:
+            message = (
+                "Calculated successfully — signals occurred, but no complete round-trip trade "
+                "was produced under the selected execution assumptions."
+            )
+            kind = BacktestOutcomeKind.CALCULATED_NO_TRADES
+        return BacktestOutcome(
+            kind=kind,
+            message=message,
+            available_bar_count=available_bar_count,
+            required_history=required_history + 1,
+            enter_signal_count=enter_signal_count,
+            exit_signal_count=exit_signal_count,
+            completed_trade_count=completed_trade_count,
         )
 
     @staticmethod

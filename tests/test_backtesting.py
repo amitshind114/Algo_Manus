@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import unittest
 
-from algo_manus.application.backtesting import BarBacktestService
+from algo_manus.application.backtesting import BacktestOutcomeKind, BarBacktestService
 from algo_manus.domain.backtest import BacktestSpec
 from algo_manus.domain.market_data import Candle, CandleDataset, DataProvenance, DataSourceKind, DataUseCase
 from algo_manus.domain.strategy import StrategyParameterRevision
@@ -123,6 +123,63 @@ class BacktestTests(unittest.TestCase):
             BarBacktestService().run(
                 dataset=paper_dataset, strategy=strategy, parameters=parameters, spec=spec
             )
+
+    def test_explanation_reports_calculated_no_trade_with_signal_context(self) -> None:
+        dataset = self._dataset()
+        strategy = SmaCrossoverStrategy()
+        parameters = StrategyParameterRevision.create(
+            "sma_crossover", {"fast_window": 3, "slow_window": 6}
+        )
+        spec = BacktestSpec(
+            dataset_id=dataset.dataset_id,
+            strategy_id=strategy.strategy_id,
+            parameter_revision_id=parameters.revision_id,
+            initial_cash=1_000,
+            quantity=10,
+            commission_bps=0,
+            slippage_bps=0,
+        )
+
+        service = BarBacktestService()
+        result = service.run(
+            dataset=dataset, strategy=strategy, parameters=parameters, spec=spec
+        )
+        explanation = service.explain(
+            dataset=dataset,
+            strategy=strategy,
+            parameters=parameters,
+            result=result,
+        )
+
+        self.assertEqual(explanation.kind, BacktestOutcomeKind.CALCULATED_NO_TRADES)
+        self.assertEqual(explanation.available_bar_count, len(dataset.candles))
+        self.assertEqual(explanation.required_history, 8)
+        self.assertEqual(explanation.completed_trade_count, 0)
+        self.assertIn("no eligible SMA crossover", explanation.message)
+
+    def test_explanation_reports_insufficient_history_before_execution(self) -> None:
+        dataset = self._dataset()
+        short_dataset = CandleDataset.create(
+            instrument_id=dataset.instrument_id,
+            interval=dataset.interval,
+            provenance=dataset.provenance,
+            candles=dataset.candles[:6],
+        )
+        strategy = SmaCrossoverStrategy()
+        parameters = StrategyParameterRevision.create(
+            "sma_crossover", {"fast_window": 3, "slow_window": 6}
+        )
+
+        explanation = BarBacktestService().explain(
+            dataset=short_dataset,
+            strategy=strategy,
+            parameters=parameters,
+        )
+
+        self.assertEqual(explanation.kind, BacktestOutcomeKind.INSUFFICIENT_HISTORY)
+        self.assertEqual(explanation.available_bar_count, 6)
+        self.assertEqual(explanation.required_history, 8)
+        self.assertIn("Insufficient history", explanation.message)
 
 
 if __name__ == "__main__":

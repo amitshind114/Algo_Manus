@@ -447,6 +447,7 @@ def _research_lab(st, service, instruments, by_id, pd) -> None:
             format_func=lambda instrument_id: f"{by_id[instrument_id].symbol} — {by_id[instrument_id].display_name}",
         )
         result = next(item.backtest for item in batch.results if item.instrument_id == security)
+        _render_backtest_outcome(st, result.outcome)
         tiles = st.columns(4)
         tiles[0].metric("Net P&L", f"₹{result.metrics.net_pnl:,.2f}")
         tiles[1].metric("Return", f"{result.metrics.total_return_pct:.2f}%")
@@ -486,7 +487,7 @@ def _leaderboard(st, service, pd) -> None:
     options = leaderboard_sort_options()
     rows = service.leaderboard(batch, options[st.selectbox("Sort by", list(options))])
     frame = pd.DataFrame([
-        {"Instrument": row.instrument_id.split(":")[-1], "Net P&L": row.net_pnl, "Return %": row.total_return_pct,
+        {"Instrument": row.instrument_id.split(":")[-1], "Outcome": _backtest_outcome_label(row.outcome), "Net P&L": row.net_pnl, "Return %": row.total_return_pct,
          "Max DD %": row.max_drawdown_pct, "Trades": row.trade_count, "Win rate %": row.win_rate_pct,
          "Profit factor": row.profit_factor, "Data note": row.data_quality_note, "Result spec": row.result_spec_id}
         for row in rows
@@ -547,7 +548,7 @@ def _reporting(st, service, pd) -> None:
     unavailable_details = []
     for item in batch.results:
         result = item.backtest
-        rows.append({"Instrument": item.instrument_id.split(":")[-1], "Net P&L": result.metrics.net_pnl, "Return %": result.metrics.total_return_pct, "Max DD %": result.metrics.max_drawdown_pct, "Trades": result.metrics.trade_count})
+        rows.append({"Instrument": item.instrument_id.split(":")[-1], "Outcome": _backtest_outcome_label(result.outcome), "Net P&L": result.metrics.net_pnl, "Return %": result.metrics.total_return_pct, "Max DD %": result.metrics.max_drawdown_pct, "Trades": result.metrics.trade_count})
         integrity = service.experiment_artifact_integrity(
             batch_id=batch.batch_id, instrument_id=item.instrument_id
         )
@@ -579,6 +580,28 @@ def _reporting(st, service, pd) -> None:
         if unavailable_details:
             st.warning("Detailed local trade artifacts are not complete for " + ", ".join(unavailable_details) + ". KPI summaries are still stored; no fixture result was recalculated.")
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
+
+
+def _backtest_outcome_label(outcome) -> str:
+    if outcome is None:
+        return "Legacy result — outcome details unavailable"
+    return outcome.kind.value.replace("_", " ").title()
+
+
+def _render_backtest_outcome(st, outcome) -> None:
+    if outcome is None:
+        st.info("This saved local result predates calculation-outcome details. KPI values are retained, but signal context is unavailable.")
+        return
+    if outcome.completed_trade_count:
+        st.success(outcome.message)
+    else:
+        st.info(outcome.message)
+    st.caption(
+        "Calculation context — "
+        f"{outcome.available_bar_count} bars available · {outcome.required_history} bars required · "
+        f"{outcome.enter_signal_count} entry signal(s) · {outcome.exit_signal_count} exit signal(s) · "
+        f"{outcome.completed_trade_count} completed trade(s)."
+    )
 
 
 def _select_persisted_batch(st, *, key: str):

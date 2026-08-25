@@ -9,6 +9,7 @@ from algo_manus.application.experiments import (
     ExperimentArtifactsUnavailableError,
 )
 from algo_manus.infrastructure.experiments.sqlite_repository import SqliteExperimentBatchRepository
+from tests.sqlite_test_utils import closed_sqlite_connection
 
 
 class ExperimentArtifactTests(unittest.TestCase):
@@ -51,7 +52,7 @@ class ExperimentArtifactTests(unittest.TestCase):
                 commission_bps=1.0,
                 slippage_bps=1.0,
             )
-            with sqlite3.connect(root / "experiments.sqlite3") as connection:
+            with closed_sqlite_connection(root / "experiments.sqlite3") as connection:
                 connection.execute("DELETE FROM experiment_equity_points WHERE batch_id = ?", (batch.batch_id,))
                 connection.execute("DELETE FROM experiment_trades WHERE batch_id = ?", (batch.batch_id,))
                 connection.execute("DELETE FROM experiment_result_artifacts WHERE batch_id = ?", (batch.batch_id,))
@@ -123,7 +124,7 @@ class ExperimentArtifactTests(unittest.TestCase):
             arguments = {"batch_id": batch.batch_id, "instrument_id": "FIXTURE:NSE:EQ:ALPHA"}
             database = root / "experiments.sqlite3"
 
-            with sqlite3.connect(database) as connection:
+            with closed_sqlite_connection(database) as connection:
                 connection.execute("DELETE FROM experiment_result_artifacts WHERE batch_id = ?", (batch.batch_id,))
             unavailable = FixtureWorkbenchService(root).experiment_artifact_integrity(**arguments)
             self.assertEqual(unavailable.status, ExperimentArtifactIntegrityStatus.UNAVAILABLE)
@@ -137,7 +138,7 @@ class ExperimentArtifactTests(unittest.TestCase):
                 commission_bps=1.0,
                 slippage_bps=1.0,
             )
-            with sqlite3.connect(database) as connection:
+            with closed_sqlite_connection(database) as connection:
                 batch_id = connection.execute(
                     "SELECT batch_id FROM experiment_batches ORDER BY created_at DESC LIMIT 1"
                 ).fetchone()[0]
@@ -149,7 +150,7 @@ class ExperimentArtifactTests(unittest.TestCase):
             )
             self.assertEqual(incomplete.status, ExperimentArtifactIntegrityStatus.INCOMPLETE)
 
-            with sqlite3.connect(database) as connection:
+            with closed_sqlite_connection(database) as connection:
                 connection.execute(
                     "UPDATE experiment_result_artifacts SET result_spec_id = 'BT-mismatch' WHERE batch_id = ?",
                     (batch_id,),

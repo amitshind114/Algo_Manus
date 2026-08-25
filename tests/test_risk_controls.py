@@ -14,6 +14,7 @@ from algo_manus.domain.risk import DeterministicRiskPolicy, OrderIntent, OrderSi
 from algo_manus.domain.risk_engine import CentralRiskPolicy, RiskDecisionCode
 from algo_manus.infrastructure.paper.sqlite_ledger import SqlitePaperLedger
 from algo_manus.infrastructure.risk import SqliteRiskControlRepository
+from tests.sqlite_test_utils import closed_sqlite_connection
 
 
 class RiskControlPersistenceTests(unittest.TestCase):
@@ -95,7 +96,7 @@ class RiskControlPersistenceTests(unittest.TestCase):
     def test_version_one_policy_database_migrates_with_legacy_limits_unset(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "risk_controls.sqlite"
-            with sqlite3.connect(path) as connection:
+            with closed_sqlite_connection(path) as connection:
                 connection.executescript(
                     """
                     CREATE TABLE schema_metadata (component TEXT PRIMARY KEY, schema_version INTEGER NOT NULL);
