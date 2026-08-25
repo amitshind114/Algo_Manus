@@ -30,14 +30,15 @@ class AngelHistoricalCandleProviderTests(unittest.TestCase):
         )
 
     def _provider(self, transport):
-        return AngelHistoricalCandleProvider(
+        provider = AngelHistoricalCandleProvider(
             credentials=AngelHistoricalCredentials(
                 app_key="fixture-app-key",
-                access_token="fixture-access-token",
                 mac_address="00:11:22:33:44:55",
             ),
             transport=transport,
         )
+        provider.set_access_token("fixture-access-token")
+        return provider
 
     def test_normalizes_a_documented_read_only_candle_response(self) -> None:
         captured: dict[str, object] = {}
@@ -56,7 +57,9 @@ class AngelHistoricalCandleProviderTests(unittest.TestCase):
                 }
             ).encode()
 
-        dataset = self._provider(transport).fetch_candles(
+        provider = self._provider(transport)
+        provider.set_access_token("fixture-access-token")
+        dataset = provider.fetch_candles(
             instrument_id=self._request().instrument_id,
             interval="1m",
             start=self.start,

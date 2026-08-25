@@ -57,14 +57,12 @@ class AngelHistoricalCredentials:
     """Secret values supplied only by a user-managed local environment."""
 
     app_key: str
-    access_token: str
     mac_address: str
 
     def __post_init__(self) -> None:
-        if not self.app_key.strip() or not self.access_token.strip() or not self.mac_address.strip():
+        if not self.app_key.strip() or not self.mac_address.strip():
             raise AngelHistoricalCandleConfigurationError(
-                "ALGO_MANUS_ANGEL_APP_KEY, ALGO_MANUS_ANGEL_ACCESS_TOKEN and "
-                "ALGO_MANUS_ANGEL_MAC_ADDRESS are required"
+                "ALGO_MANUS_ANGEL_APP_KEY and ALGO_MANUS_ANGEL_MAC_ADDRESS are required"
             )
 
 
@@ -93,10 +91,12 @@ class AngelHistoricalCandleProvider:
         credentials: AngelHistoricalCredentials | None,
         transport: _Transport | None = None,
         configuration_error: str | None = None,
+        access_token: str | None = None,
     ) -> None:
         self._credentials = credentials
         self._transport = transport or _post_json
         self._configuration_error = configuration_error
+        self._access_token = access_token.strip() if access_token else None
 
     @classmethod
     def from_environment(cls) -> "AngelHistoricalCandleProvider":
@@ -107,28 +107,46 @@ class AngelHistoricalCandleProvider:
         mac_address = os.environ.get("ALGO_MANUS_ANGEL_MAC_ADDRESS", "").strip()
         if not app_key and not access_token and not mac_address:
             return cls(credentials=None)
-        if not app_key or not access_token or not mac_address:
+        if not app_key or not mac_address:
             return cls(
                 credentials=None,
                 configuration_error=(
-                    "ALGO_MANUS_ANGEL_APP_KEY, ALGO_MANUS_ANGEL_ACCESS_TOKEN and "
-                    "ALGO_MANUS_ANGEL_MAC_ADDRESS must be configured together"
+                    "ALGO_MANUS_ANGEL_APP_KEY and ALGO_MANUS_ANGEL_MAC_ADDRESS "
+                    "must be configured together"
                 ),
             )
-        return cls(credentials=AngelHistoricalCredentials(app_key, access_token, mac_address))
+        return cls(
+            credentials=AngelHistoricalCredentials(app_key, mac_address),
+            access_token=access_token or None,
+        )
 
     @property
     def credentials_configured(self) -> bool:
-        return self._credentials is not None and self._configuration_error is None
+        return (
+            self._credentials is not None
+            and self._configuration_error is None
+            and self._access_token is not None
+        )
 
     @property
     def configuration_message(self) -> str:
         return self._configuration_error or (
-            "ALGO_MANUS_ANGEL_APP_KEY, ALGO_MANUS_ANGEL_ACCESS_TOKEN and "
-            "ALGO_MANUS_ANGEL_MAC_ADDRESS are required for local read-only configuration"
+            "ALGO_MANUS_ANGEL_APP_KEY and ALGO_MANUS_ANGEL_MAC_ADDRESS are required "
             if self._credentials is None
-            else "configured"
+            else "an active local Angel session or ALGO_MANUS_ANGEL_ACCESS_TOKEN is required"
         )
+
+    def set_access_token(self, access_token: str) -> None:
+        """Accept a transient token from the local Option C session service only."""
+
+        if not access_token.strip():
+            raise ValueError("access token must not be blank")
+        self._access_token = access_token
+
+    def clear_access_token(self) -> None:
+        """Discard any in-memory token handoff without an external request."""
+
+        self._access_token = None
 
     def fetch_candles(
         self,
@@ -182,7 +200,7 @@ class AngelHistoricalCandleProvider:
         )
 
     def _headers(self) -> dict[str, str]:
-        assert self._credentials is not None
+        assert self._credentials is not None and self._access_token is not None
         return {
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -190,7 +208,7 @@ class AngelHistoricalCandleProvider:
             "X-SourceID": "WEB",
             "X-MACAddress": self._credentials.mac_address,
             "X-PrivateKey": self._credentials.app_key,
-            "Authorization": f"Bearer {self._credentials.access_token}",
+            "Authorization": f"Bearer {self._access_token}",
         }
 
     @staticmethod

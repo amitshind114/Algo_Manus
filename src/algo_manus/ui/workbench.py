@@ -39,7 +39,7 @@ def run_workbench(st) -> None:
     _style(st)
     service = FixtureWorkbenchService(_local_data_root())
     public_instrument_source = _local_public_instrument_source()
-    historical_candle_source = _local_authenticated_historical_source()
+    historical_candle_source, angel_session = _local_authenticated_historical_source(st)
     control_service = _local_risk_controls()
     paper_ledger = _local_paper_ledger()
     instruments = service.instruments()
@@ -62,10 +62,12 @@ def run_workbench(st) -> None:
             + ("cached locally" if source_status.availability == "available" else "not downloaded")
         )
         historical_status = historical_candle_source.status()
+        session_status = angel_session.status()
         st.caption(
             "Angel history: "
             + ("cached locally" if historical_status.availability == "available" else "local configuration required")
         )
+        st.caption("Angel session: " + session_status.session_state.replace("_", " "))
 
     if page == "Overview":
         _overview(st, service, pd)
@@ -77,6 +79,7 @@ def run_workbench(st) -> None:
             pd,
             public_instrument_source,
             historical_candle_source,
+            angel_session,
         )
     elif page == "Backtesting":
         _research_lab(st, service, instruments, by_id, pd)
@@ -139,19 +142,29 @@ def _local_public_instrument_source():
     )
 
 
-def _local_authenticated_historical_source():
-    """Return the manual Option B service; UI rendering never requests broker data."""
+def _local_authenticated_historical_source(st):
+    """Return session-scoped Option B/C services; UI rendering never requests broker data."""
 
+    from algo_manus.application.angel_session import LocalAngelSessionService
     from algo_manus.application.authenticated_historical_source import (
         AuthenticatedHistoricalCandleService,
     )
     from algo_manus.infrastructure.market_data.angel_one import AngelHistoricalCandleProvider
     from algo_manus.infrastructure.market_data.sqlite_repository import SqliteCandleDatasetRepository
+    from algo_manus.infrastructure.sessions.angel_one import AngelSessionGateway
 
-    data_root = _local_data_root()
-    return AuthenticatedHistoricalCandleService(
-        SqliteCandleDatasetRepository(data_root / "market_data.sqlite3"),
-        AngelHistoricalCandleProvider.from_environment(),
+    if "angel_historical_source" not in st.session_state:
+        data_root = _local_data_root()
+        provider = AngelHistoricalCandleProvider.from_environment()
+        st.session_state["angel_historical_source"] = AuthenticatedHistoricalCandleService(
+            SqliteCandleDatasetRepository(data_root / "market_data.sqlite3"), provider
+        )
+        st.session_state["angel_session_service"] = LocalAngelSessionService(
+            AngelSessionGateway.from_environment(), provider
+        )
+    return (
+        st.session_state["angel_historical_source"],
+        st.session_state["angel_session_service"],
     )
 
 
@@ -432,6 +445,7 @@ def _data_and_instruments(
     pd,
     public_instrument_source,
     historical_candle_source,
+    angel_session,
 ) -> None:
     _header(st, "Data & instruments", "Search the current local universe as you would the future broker-synced instrument master. Manual ticker entry is intentionally not used.")
     source_status = public_instrument_source.status()
@@ -491,7 +505,7 @@ def _data_and_instruments(
     else:
         st.info("No Angel One master is retained locally yet. Download the public master above to create the first immutable snapshot.")
     st.divider()
-    _historical_candle_panel(st, pd, public_instrument_source, historical_candle_source)
+    _historical_candle_panel(st, pd, public_instrument_source, historical_candle_source, angel_session)
     st.divider()
     st.subheader("Current fixture research universe")
     table = pd.DataFrame([
@@ -523,12 +537,19 @@ def _data_and_instruments(
     st.caption("Fixture research remains separate until an approved historical-data source persists validated datasets. The retained Angel master above does not silently replace this universe.")
 
 
-def _historical_candle_panel(st, pd, public_instrument_source, historical_candle_source) -> None:
+def _historical_candle_panel(
+    st,
+    pd,
+    public_instrument_source,
+    historical_candle_source,
+    angel_session,
+) -> None:
     """Render Option B local evidence controls without direct provider or database I/O."""
 
     from algo_manus.application.market_data import MarketDataRequest
     from algo_manus.domain.market_data import DataUseCase
 
+    session_status = angel_session.status()
     status = historical_candle_source.status()
     st.subheader("Angel One authenticated historical candles")
     left, middle, right = st.columns([1.15, 1.1, 1.6])
@@ -545,9 +566,36 @@ def _historical_candle_panel(st, pd, public_instrument_source, historical_candle
         "This is a manual, research-only retrieval using a user-managed local app key and existing short-lived access token. "
         "It cannot sign in, refresh a token, access an account, retrieve live prices, open a WebSocket, submit paper orders or enable execution."
     )
-    if not status.credentials_configured:
+    session_left, session_middle, session_right = st.columns(3)
+    session_left.metric("Local session", session_status.session_state.replace("_", " ").title())
+    session_middle.caption(
+        "Acquired: " + (session_status.acquired_at.isoformat() if session_status.acquired_at else "Not in this browser session")
+    )
+    if session_status.session_state == "active_in_memory":
+        if session_right.button("Refresh local session", key="refresh_angel_session"):
+            try:
+                angel_session.refresh()
+            except Exception as exc:
+                st.error(f"Session refresh was unavailable; the existing local session was retained: {exc}")
+            else:
+                st.success("Local in-memory session refreshed for read-only historical research.")
+                st.rerun()
+        if st.button("Forget local session", type="secondary", key="forget_angel_session"):
+            angel_session.forget()
+            st.info("The local in-memory session handoff was forgotten. No remote logout request was made.")
+            st.rerun()
+    elif session_status.credentials_configured:
+        if session_right.button("Start local session", type="secondary", key="start_angel_session"):
+            try:
+                angel_session.start()
+            except Exception as exc:
+                st.error(f"Local session was unavailable; no token or dataset was retained: {exc}")
+            else:
+                st.success("Local in-memory session is ready for read-only historical research.")
+                st.rerun()
+    else:
         st.info(
-            "Local read-only configuration is required before a candle request. Configure the two documented local environment variables yourself; "
+            "Local session configuration is required before a candle request. Configure the documented local environment values yourself; "
             "do not paste credentials, client code, PIN, TOTP, refresh tokens or access tokens into this workbench or chat."
         )
 

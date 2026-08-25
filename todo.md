@@ -12,3 +12,14 @@
 - [x] Update documentation with Option B scope, credential isolation, evidence semantics, limits and Option C deferral.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option B changes to `main`, then report completion and request separate Option C security approval.
+
+## Option C — local Angel One session handling security phase
+
+- [x] Inspect official session-generation and token-refresh requirements plus current local configuration, secret-ignore and market-data boundaries.
+- [x] Design a manual-only local session lifecycle that limits secret exposure, prevents persistence/logging and defines expiry/failure behavior.
+- [x] Implement typed session acquisition and short-lived access-token handoff to the existing read-only historical adapter without account, order, market-price, WebSocket, scheduler or execution capabilities.
+- [x] Add deterministic session-contract, failure, no-secret-exposure, no-prohibited-capability and adapter-integration regression tests.
+- [x] Expose only display-safe local session readiness and manual lifecycle controls through application services; never render or accept raw secrets in the UI.
+- [x] Update local configuration guidance and documentation with Option C security limits, rotation/expiry behavior and the remaining capability gates.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [x] Commit and push only Option C changes to `main`, then report completion and identify the next approval gate.
