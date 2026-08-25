@@ -19,6 +19,7 @@ class InstrumentType(StrEnum):
     FUTURE = "FUTURE"
     OPTION = "OPTION"
     COMMODITY = "COMMODITY"
+    CURRENCY = "CURRENCY"
 
 
 class InstrumentStatus(StrEnum):
@@ -125,10 +126,15 @@ class InstrumentMasterSnapshot:
             raise ValueError("content_sha256 must be a SHA-256 hex digest")
         if self.downloaded_at.tzinfo is None:
             raise ValueError("downloaded_at must be timezone-aware")
-        identities = [instrument.instrument_id for instrument in self.instruments]
-        duplicates = sorted({identity for identity in identities if identities.count(identity) > 1})
+        seen_identities: set[str] = set()
+        duplicates: set[str] = set()
+        for instrument in self.instruments:
+            identity = instrument.instrument_id
+            if identity in seen_identities:
+                duplicates.add(identity)
+            seen_identities.add(identity)
         if duplicates:
-            raise ValueError(f"duplicate instrument identities in snapshot: {duplicates}")
+            raise ValueError(f"duplicate instrument identities in snapshot: {sorted(duplicates)}")
         brokers = {instrument.broker.upper() for instrument in self.instruments}
         if brokers and brokers != {self.broker.upper()}:
             raise ValueError("all instruments must belong to snapshot broker")

@@ -56,6 +56,12 @@ class InstrumentMasterTests(unittest.TestCase):
         self.assertEqual(loaded.instruments[0].instrument_id, "ANGEL_ONE:NSE:NSE:500325")
         self.assertEqual(len(loaded.active_instruments), 2)
 
+    def test_snapshot_rejects_duplicate_instrument_identities(self) -> None:
+        duplicate = instrument(token="500325", symbol="RELIANCE-EQ", display_name="RELIANCE")
+
+        with self.assertRaisesRegex(ValueError, "duplicate instrument identities"):
+            snapshot(instruments=(duplicate, duplicate))
+
     def test_repository_releases_database_file_after_use(self) -> None:
         database_path = Path(self.temp_dir.name) / "instrument_master.sqlite3"
         self.repository.save(snapshot(downloaded_at=self.now))

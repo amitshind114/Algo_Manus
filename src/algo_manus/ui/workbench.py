@@ -37,6 +37,7 @@ def run_workbench(st) -> None:
     from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
     _style(st)
     service = FixtureWorkbenchService(_local_data_root())
+    public_instrument_source = _local_public_instrument_source()
     control_service = _local_risk_controls()
     paper_ledger = _local_paper_ledger()
     instruments = service.instruments()
@@ -53,12 +54,16 @@ def run_workbench(st) -> None:
         st.divider()
         st.metric("Selected securities", len(st.session_state.selected_ids))
         st.metric("Saved local experiments", len(st.session_state.history))
-        st.caption("Real broker sync remains separately gated.")
+        source_status = public_instrument_source.status()
+        st.caption(
+            "Angel public master: "
+            + ("cached locally" if source_status.availability == "available" else "not downloaded")
+        )
 
     if page == "Overview":
         _overview(st, service, pd)
     elif page == "Data & instruments":
-        _data_and_instruments(st, instruments, by_id, pd)
+        _data_and_instruments(st, instruments, by_id, pd, public_instrument_source)
     elif page == "Backtesting":
         _research_lab(st, service, instruments, by_id, pd)
     elif page == "Multi-test leaderboard":
@@ -102,6 +107,22 @@ def _local_paper_ledger():
 
     data_root = _local_data_root()
     return SqlitePaperLedger(data_root / "paper_ledger.sqlite3")
+
+
+def _local_public_instrument_source():
+    """Return the manual public Angel master service; no import or UI render downloads data."""
+
+    from algo_manus.application.public_instrument_source import PublicInstrumentSourceService
+    from algo_manus.infrastructure.instruments.angel_one import AngelScripMasterProvider
+    from algo_manus.infrastructure.instruments.sqlite_repository import (
+        SqliteInstrumentSnapshotRepository,
+    )
+
+    data_root = _local_data_root()
+    return PublicInstrumentSourceService(
+        SqliteInstrumentSnapshotRepository(data_root / "instrument_master.sqlite3"),
+        AngelScripMasterProvider(),
+    )
 
 
 def _local_data_root() -> Path:
@@ -374,8 +395,66 @@ def _overview(st, service, pd) -> None:
         st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness, and they do not repair any result.")
 
 
-def _data_and_instruments(st, instruments, by_id, pd) -> None:
+def _data_and_instruments(st, instruments, by_id, pd, public_instrument_source) -> None:
     _header(st, "Data & instruments", "Search the current local universe as you would the future broker-synced instrument master. Manual ticker entry is intentionally not used.")
+    source_status = public_instrument_source.status()
+    st.subheader("Angel One public instrument master")
+    source_left, source_middle, source_right, source_action = st.columns([1.2, 1.1, 1.45, 1.35])
+    source_left.metric("Public source", "Cached" if source_status.availability == "available" else "Not downloaded")
+    source_middle.metric("Retained instruments", source_status.instrument_count)
+    source_right.caption(
+        "Snapshot: "
+        + (source_status.snapshot_id or "No retained Angel One snapshot")
+    )
+    source_right.caption(
+        "Last checked: "
+        + (source_status.last_checked_at.isoformat() if source_status.last_checked_at else "Not yet checked")
+    )
+    with source_action:
+        if st.button("Download public Angel master", type="secondary"):
+            try:
+                result = public_instrument_source.sync()
+            except Exception as exc:
+                st.error(f"Public Angel master was unavailable; no local snapshot changed: {exc}")
+            else:
+                st.success(
+                    f"Manual source check completed: {result.reason}. "
+                    f"Snapshot {result.snapshot.snapshot_id} is retained locally."
+                )
+                st.rerun()
+    st.caption(
+        "This action downloads only Angel One’s public ScripMaster JSON into an immutable local SQLite snapshot. "
+        "It does not authenticate, access an account, fetch prices, submit paper orders or enable execution."
+    )
+    angel_preview = public_instrument_source.preview(limit=100)
+    if angel_preview:
+        with st.expander("Retained Angel One snapshot preview", expanded=False):
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Symbol": item.trading_symbol,
+                            "Name": item.display_name,
+                            "Exchange": item.exchange,
+                            "Type": item.instrument_type.value,
+                            "Token": item.broker_token,
+                            "Status": item.status.value,
+                            "Instrument identity": item.instrument_id,
+                        }
+                        for item in angel_preview
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+                height=280,
+            )
+            st.caption(
+                "Preview is read-only retained broker-master metadata. Historical candles and a broker-backed research universe remain separately gated."
+            )
+    else:
+        st.info("No Angel One master is retained locally yet. Download the public master above to create the first immutable snapshot.")
+    st.divider()
+    st.subheader("Current fixture research universe")
     table = pd.DataFrame([
         {"Symbol": item.symbol, "Company": item.display_name, "Segment": item.segment, "Instrument identity": item.instrument_id, "Status": "Fixture active"}
         for item in instruments
@@ -402,7 +481,7 @@ def _data_and_instruments(st, instruments, by_id, pd) -> None:
         format_func=lambda instrument_id: f"{by_id[instrument_id].symbol} — {by_id[instrument_id].display_name}",
     )
     st.session_state.selected_ids = tuple(chosen)
-    st.caption("Future real-data mode will populate this table from a validated, versioned broker snapshot and flag unavailable or renamed instruments.")
+    st.caption("Fixture research remains separate until an approved historical-data source persists validated datasets. The retained Angel master above does not silently replace this universe.")
 
 
 def _research_lab(st, service, instruments, by_id, pd) -> None:
