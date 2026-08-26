@@ -25,6 +25,7 @@ class StrategyRegistryTests(unittest.TestCase):
                 "sma_crossover",
                 "ema_crossover",
                 "rsi_mean_reversion",
+                "rsi_threshold_reversion",
                 "macd_signal",
                 "bollinger_breakout",
                 "triple_ema_crossover",

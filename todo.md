@@ -96,3 +96,14 @@
 - [x] Document canonical local instrument metadata, snapshot/review semantics, explicit data freshness limits and no-broker/no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option I changes to `main`, then report completion and request the next separate approval.
+
+## Option J — strategy-family hardening and research-gate comparison
+
+- [x] Audit current strategy registry, SMA implementation, backtest engine, research evidence, promotion rules and workbench comparison reads for safe extension seams.
+- [x] Define failing deterministic acceptance tests for the second strategy’s parameter validation, no-lookahead fills, reproducibility, evidence outputs, comparison and promotion-gate compatibility.
+- [x] Implement a second conservative versioned local strategy and register it without changing or weakening SMA crossover behavior.
+- [x] Integrate the strategy with immutable research artifacts, comparable local results and existing paper-promotion evidence gates.
+- [x] Expose display-safe strategy-family comparison and evidence/gate status reads in the workbench without recommendations or actionable order controls.
+- [x] Document strategy assumptions, local simulation limits, no-performance claims, selection bias limits and no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option J changes to `main`, then report completion and request the next separate approval.

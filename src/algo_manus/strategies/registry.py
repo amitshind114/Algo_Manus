@@ -72,6 +72,7 @@ def built_in_strategies() -> tuple[Strategy, ...]:
         RsiMeanReversionStrategy,
         TripleEmaCrossoverStrategy,
     )
+    from algo_manus.strategies.rsi_threshold_reversion import RsiThresholdReversionStrategy
     from algo_manus.strategies.sma_crossover import SmaCrossoverStrategy
 
     return (
@@ -79,6 +80,7 @@ def built_in_strategies() -> tuple[Strategy, ...]:
         EmaCrossoverStrategy(),
         MacdSignalStrategy(),
         RsiMeanReversionStrategy(),
+        RsiThresholdReversionStrategy(),
         SmaCrossoverStrategy(),
         TripleEmaCrossoverStrategy(),
     )

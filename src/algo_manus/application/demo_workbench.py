@@ -48,6 +48,10 @@ from algo_manus.application.experiments import (
 from algo_manus.application.leaderboard import LeaderboardService, LeaderboardSort
 from algo_manus.application.local_event_bus import LocalEventBus
 from algo_manus.application.paper_promotion import PaperResearchPromotionService
+from algo_manus.application.strategy_family_comparison import (
+    StrategyFamilyComparison,
+    StrategyFamilyComparisonReadService,
+)
 from algo_manus.domain.experiment import ExperimentBatch
 from algo_manus.domain.market_data import (
     Candle,
@@ -313,6 +317,35 @@ class FixtureWorkbenchService:
         return PaperResearchPromotionService(
             ExperimentEvidenceReadService(self._batches, self._manifests)
         ).resolve(batch_id=batch_id, instrument_id=instrument_id)
+
+    def strategy_family_comparison(
+        self,
+        *,
+        left_batch_id: str,
+        right_batch_id: str,
+    ) -> StrategyFamilyComparison:
+        """Compare two retained local research batches without ranking or promoting either one."""
+
+        left_batch = self._batches.get(left_batch_id)
+        right_batch = self._batches.get(right_batch_id)
+        if left_batch is None or right_batch is None:
+            raise LookupError("both retained experiment batches are required for comparison")
+        left_manifest = (
+            self._manifests.get(left_batch.research_manifest_id)
+            if left_batch.research_manifest_id is not None
+            else None
+        )
+        right_manifest = (
+            self._manifests.get(right_batch.research_manifest_id)
+            if right_batch.research_manifest_id is not None
+            else None
+        )
+        return StrategyFamilyComparisonReadService().compare(
+            left_batch=left_batch,
+            right_batch=right_batch,
+            left_manifest=left_manifest,
+            right_manifest=right_manifest,
+        )
 
     def recent_experiments(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
         """Return local persisted fixture batches newest-first for restart-safe workbench history."""

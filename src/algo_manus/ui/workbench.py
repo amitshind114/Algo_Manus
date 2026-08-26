@@ -1066,6 +1066,79 @@ def _strategies(st, service, pd) -> None:
         st.metric("Registered research strategies", len(metadata))
         st.metric("Available historical experiments", len(st.session_state.history))
         st.caption("No performance scores are invented here. KPI values appear only after an actual local experiment run.")
+    st.divider()
+    st.subheader("Retained strategy-family comparison")
+    retained_batches = service.recent_experiments()
+    if len(retained_batches) < 2:
+        st.info("Run and retain at least two local research batches before comparing their evidence. This page does not calculate, select, promote or recommend a strategy.")
+        return
+    batch_by_id = {item.batch_id: item for item in retained_batches}
+    comparison_left, comparison_right = st.columns(2)
+    left_batch_id = comparison_left.selectbox(
+        "Left retained research batch",
+        list(batch_by_id),
+        format_func=lambda batch_id: _strategy_batch_label(batch_by_id[batch_id]),
+        key="strategy_family_compare_left",
+    )
+    right_options = [batch_id for batch_id in batch_by_id if batch_id != left_batch_id]
+    right_batch_id = comparison_right.selectbox(
+        "Right retained research batch",
+        right_options,
+        format_func=lambda batch_id: _strategy_batch_label(batch_by_id[batch_id]),
+        key="strategy_family_compare_right",
+    )
+    comparison = service.strategy_family_comparison(
+        left_batch_id=left_batch_id,
+        right_batch_id=right_batch_id,
+    )
+    if comparison.is_comparable:
+        st.success("Like-for-like retained comparison: " + comparison.comparison_basis + ".")
+    else:
+        st.warning(comparison.comparability_reason)
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Strategy": member.strategy_id,
+                    "Version": member.strategy_version or "Retained manifest unavailable",
+                    "Parameter revision": member.parameter_revision_id,
+                    "Batch": member.batch_id,
+                    "Research manifest": member.research_manifest_id or "—",
+                    "Results": member.result_count,
+                    "Aggregate local net P&L": member.aggregate_net_pnl,
+                    "Aggregate trades": member.aggregate_trade_count,
+                }
+                for member in comparison.members
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    promotion_rows = []
+    for member in comparison.members:
+        batch = batch_by_id[member.batch_id]
+        sample_result = batch.results[0]
+        promotion = service.paper_promotion(
+            batch_id=batch.batch_id,
+            instrument_id=sample_result.instrument_id,
+        )
+        promotion_rows.append(
+            {
+                "Strategy": member.strategy_id,
+                "Sample instrument": sample_result.instrument_id,
+                "Immutable research/validation evidence": "Resolved" if promotion is not None else "Unavailable",
+                "Paper status": "Still requires separate deterministic risk review",
+            }
+        )
+    st.caption("Promotion-evidence context is a read-only manifest/validation lookup for one retained result per batch. It is not a paper approval, execution permission, performance ranking or recommendation.")
+    st.dataframe(pd.DataFrame(promotion_rows), hide_index=True, width="stretch")
+    st.caption("This comparison is limited to retained local research evidence. Comparable KPI rows do not establish robustness, future performance, market suitability or a preferred strategy.")
+
+
+def _strategy_batch_label(batch) -> str:
+    """Keep retained local comparison labels compact and non-evaluative."""
+
+    return f"{batch.strategy_id} · {batch.parameter_revision_id[-8:]} · {batch.batch_id[-8:]}"
 
 
 def _reporting(st, service, pd) -> None:

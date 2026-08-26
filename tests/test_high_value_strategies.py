@@ -31,7 +31,7 @@ class HighValueStrategyTests(unittest.TestCase):
     def test_registry_exposes_selected_high_value_families(self) -> None:
         ids = {item.strategy_id for item in built_in_registry().metadata()}
         self.assertEqual(ids, {
-            "sma_crossover", "ema_crossover", "rsi_mean_reversion",
+            "sma_crossover", "ema_crossover", "rsi_mean_reversion", "rsi_threshold_reversion",
             "macd_signal", "bollinger_breakout", "triple_ema_crossover",
         })
 
