@@ -138,4 +138,4 @@
 - [x] Expose a display-safe review-evidence summary in the workbench without promotion, approval, order, paper-run, broker, feed, scheduler or execution controls.
 - [x] Document review semantics, fixture distinction, data/corporate-action/calendar limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option M changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option M changes to `main`, then report completion and request the next separate approval.
