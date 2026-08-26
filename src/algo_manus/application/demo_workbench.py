@@ -48,6 +48,11 @@ from algo_manus.application.experiments import (
 from algo_manus.application.leaderboard import LeaderboardService, LeaderboardSort
 from algo_manus.application.local_event_bus import LocalEventBus
 from algo_manus.application.paper_promotion import PaperResearchPromotionService
+from algo_manus.application.paper_run_eligibility import (
+    LocalPaperRunEligibilityService,
+    PaperRunEligibilityEvidence,
+    PaperRunEligibilityPolicy,
+)
 from algo_manus.application.robustness import (
     LocalRobustnessEvaluationService,
     RobustnessEvidence,
@@ -233,6 +238,29 @@ class _MemoryRobustnessEvidenceRepository:
         )
 
 
+class _MemoryPaperRunEligibilityEvidenceRepository:
+    """Fixture-only local evidence records for the current process."""
+
+    def __init__(self) -> None:
+        self._evidence: dict[str, PaperRunEligibilityEvidence] = {}
+
+    def save(self, evidence: PaperRunEligibilityEvidence) -> None:
+        existing = self._evidence.get(evidence.evidence_id)
+        if existing is not None and existing != evidence:
+            raise ValueError("immutable paper-run eligibility evidence conflicts with existing record")
+        self._evidence.setdefault(evidence.evidence_id, evidence)
+
+    def get(self, evidence_id: str) -> PaperRunEligibilityEvidence | None:
+        return self._evidence.get(evidence_id)
+
+    def list_recent(self, limit: int = 20) -> tuple[PaperRunEligibilityEvidence, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        return tuple(
+            sorted(self._evidence.values(), key=lambda item: (item.evaluated_at, item.evidence_id), reverse=True)[:limit]
+        )
+
+
 class FixtureWorkbenchService:
     """Uses the production application services with deterministic local inputs."""
 
@@ -250,28 +278,23 @@ class FixtureWorkbenchService:
         "FIXTURE:NSE:EQ:DELTA": ("DELTA", "Fixture Delta Logistics"),
         "FIXTURE:NSE:EQ:EMBER": ("EMBER", "Fixture Ember Consumer"),
     }
-    _ROBUSTNESS_SERIES: Mapping[str, tuple[float, ...]] = {
-        "FIXTURE:NSE:EQ:ALPHA": (
-            100, 98, 96, 97, 101, 106, 110, 107, 103, 99,
-            96, 98, 102, 108, 113, 110, 106, 103, 100, 104,
-            109, 114, 117, 113, 108, 105, 101, 104, 109, 115,
-        ),
-    }
-
     def __init__(self, data_root: Path | None = None, event_bus: LocalEventBus | None = None) -> None:
         self._event_bus = event_bus or LocalEventBus()
         if data_root is None:
             self._batches = _MemoryExperimentRepository()
             self._manifests = _MemoryResearchManifestRepository()
             self._robustness = _MemoryRobustnessEvidenceRepository()
+            self._paper_run_eligibility = _MemoryPaperRunEligibilityEvidenceRepository()
         else:
             from algo_manus.infrastructure.experiments.sqlite_repository import SqliteExperimentBatchRepository
             from algo_manus.infrastructure.research.sqlite_repository import SqliteResearchEvidenceRepository
             from algo_manus.infrastructure.robustness.sqlite_repository import SqliteRobustnessEvidenceRepository
+            from algo_manus.infrastructure.paper_eligibility.sqlite_repository import SqlitePaperRunEligibilityEvidenceRepository
 
             self._batches = SqliteExperimentBatchRepository(data_root / "experiments.sqlite3")
             self._manifests = SqliteResearchEvidenceRepository(data_root / "research_evidence.sqlite3")
             self._robustness = SqliteRobustnessEvidenceRepository(data_root / "robustness_evidence.sqlite3")
+            self._paper_run_eligibility = SqlitePaperRunEligibilityEvidenceRepository(data_root / "paper_run_eligibility.sqlite3")
 
     def instruments(self) -> tuple[FixtureInstrument, ...]:
         return tuple(
@@ -393,13 +416,13 @@ class FixtureWorkbenchService:
         promotion from this method. It only retains local evidence for display.
         """
 
-        if instrument_id not in self._ROBUSTNESS_SERIES:
+        if instrument_id != "FIXTURE:NSE:EQ:ALPHA":
             raise ValueError("robustness evaluation is available only for the declared ALPHA fixture series")
         return LocalRobustnessEvaluationService(self._robustness).evaluate(
-            dataset=self._robustness_dataset(instrument_id),
+            dataset=self._dataset(instrument_id),
             strategy=built_in_registry().get("sma_crossover"),
             grid=RobustnessGrid({"fast_window": (2, 3), "slow_window": (5, 6)}),
-            split_policy=RobustnessSplitPolicy(in_sample_ratio=0.6, max_grid_cells=4),
+            split_policy=RobustnessSplitPolicy(in_sample_ratio=0.5, max_grid_cells=4),
             initial_cash=100_000,
             quantity=100,
             commission_bps=10,
@@ -411,6 +434,36 @@ class FixtureWorkbenchService:
         """Return retained robustness evidence only; this never ranks, promotes or trades."""
 
         return self._robustness.list_recent(limit)
+
+    def paper_run_eligibility(
+        self,
+        *,
+        batch_id: str,
+        instrument_id: str,
+        control_snapshot,
+        policy: PaperRunEligibilityPolicy,
+        evaluated_at: datetime | None = None,
+    ) -> PaperRunEligibilityEvidence:
+        """Record a read-only local paper-run evidence assessment; never approve or execute."""
+
+        research = ExperimentEvidenceReadService(self._batches, self._manifests)
+        return LocalPaperRunEligibilityService(
+            research,
+            PaperResearchPromotionService(research),
+            self._robustness,
+            self._paper_run_eligibility,
+        ).evaluate(
+            batch_id=batch_id,
+            instrument_id=instrument_id,
+            control_snapshot=control_snapshot,
+            policy=policy,
+            evaluated_at=evaluated_at,
+        )
+
+    def recent_paper_run_eligibility(self, limit: int = 20) -> tuple[PaperRunEligibilityEvidence, ...]:
+        """Return immutable local eligibility evidence only; no action is available."""
+
+        return self._paper_run_eligibility.list_recent(limit)
 
     def recent_experiments(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
         """Return local persisted fixture batches newest-first for restart-safe workbench history."""
@@ -520,36 +573,6 @@ class FixtureWorkbenchService:
                 retrieved_at=start,
                 raw_content_sha256=sha256(f"fixture-workbench:{instrument_id}".encode()).hexdigest(),
                 adjustment_basis="synthetic unadjusted fixture bars",
-                use_case=DataUseCase.RESEARCH,
-            ),
-            candles=candles,
-        )
-
-    def _robustness_dataset(self, instrument_id: str) -> CandleDataset:
-        """Return a longer, clearly labeled deterministic fixture solely for gate demonstration."""
-
-        start = datetime(2026, 1, 1, 9, 15, tzinfo=timezone.utc)
-        candles = tuple(
-            Candle(
-                timestamp=start + timedelta(days=index),
-                open=close,
-                high=close + 1.0,
-                low=close - 1.0,
-                close=close,
-                volume=10_000,
-            )
-            for index, close in enumerate(self._ROBUSTNESS_SERIES[instrument_id])
-        )
-        return CandleDataset.create(
-            instrument_id=instrument_id,
-            interval="1d",
-            provenance=DataProvenance(
-                source_name="algo-manus-robustness-fixture",
-                source_kind=DataSourceKind.FIXTURE,
-                source_uri="fixture://algo-manus/robustness-gate-v1",
-                retrieved_at=start,
-                raw_content_sha256=sha256(f"robustness-fixture:{instrument_id}".encode()).hexdigest(),
-                adjustment_basis="synthetic unadjusted fixture bars; not market evidence",
                 use_case=DataUseCase.RESEARCH,
             ),
             candles=candles,

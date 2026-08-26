@@ -1069,11 +1069,11 @@ def _strategies(st, service, pd) -> None:
     st.divider()
     st.subheader("Bounded chronological robustness gate")
     st.caption(
-        "A deliberately fixed local research check: SMA crossover only, four declared parameter cells, a 60% chronological in-sample partition, one declared embargo bar and an untouched remaining holdout partition. It uses deterministic fixture bars, not broker or market data."
+        "A deliberately fixed local research check: SMA crossover only, four declared parameter cells, a 50% chronological in-sample partition, one declared embargo bar and an untouched remaining holdout partition. It uses deterministic fixture bars, not broker or market data."
     )
     robustness_left, robustness_middle, robustness_right = st.columns(3)
     robustness_left.metric("Grid", "4 declared cells")
-    robustness_middle.metric("Split", "60% / 1-bar embargo / holdout")
+    robustness_middle.metric("Split", "50% / 1-bar embargo / holdout")
     robustness_right.metric("Gate", "Informational only")
     st.caption(
         "This control records local research evidence only. It cannot select a candidate, promote a strategy, approve paper activity, submit an order, retrieve broker data or provide a recommendation."
@@ -1371,6 +1371,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     from algo_manus.application.paper_audit import PaperOperationAuditTimelineReadService
     from algo_manus.application.paper_execution import PaperExecutionService
     from algo_manus.application.paper_operations_console import LocalPaperOperationsConsoleReadService
+    from algo_manus.application.paper_run_eligibility import PaperRunEligibilityPolicy
     from algo_manus.application.paper_risk import PaperPortfolioRiskService
     from algo_manus.domain.instruments import InstrumentStatus
     from algo_manus.domain.paper import LocalLimitFillAssumptions, LocalOrderType, PaperFillSimulationOutcome
@@ -1396,6 +1397,11 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         fixture_policy,
         initial_kill_reason="initialized by local fixture workbench",
     )
+    eligibility_policy = PaperRunEligibilityPolicy(
+        policy_version="fixture-paper-run-evidence-v1",
+        max_research_age=timedelta(days=90),
+        max_robustness_age=timedelta(days=90),
+    )
     paper_audit = PaperOperationAuditTimelineReadService(ledger)
     fixture_starting_cash = 100_000.0
     paper_console = LocalPaperOperationsConsoleReadService(ledger, service.local_event_bus())
@@ -1418,6 +1424,59 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                 hide_index=True,
                 width="stretch",
             )
+    with st.expander("Local paper-run evidence gate", expanded=True):
+        st.caption(
+            "This is a local evidence assessment only. It checks retained research promotion evidence, matching retained robustness evidence and the current durable risk-control snapshot. It does not approve a paper run, evaluate an order, promote a strategy or create a paper event."
+        )
+        evidence_instrument_id = st.selectbox(
+            "Retained research instrument for evidence assessment",
+            [item.instrument_id for item in batch.results],
+            format_func=lambda item: by_id[item].symbol,
+            key="paper_run_evidence_instrument",
+        )
+        gate_left, gate_middle, gate_right = st.columns(3)
+        gate_left.metric("Evidence policy", eligibility_policy.policy_version)
+        gate_middle.metric("Research / robustness age", "90d / 90d")
+        gate_right.metric("Current kill state", "ACTIVE" if snapshot.kill_switch_active else "INACTIVE")
+        if st.button("Record local evidence assessment", key="record_paper_run_evidence"):
+            assessment = service.paper_run_eligibility(
+                batch_id=batch.batch_id,
+                instrument_id=evidence_instrument_id,
+                control_snapshot=snapshot,
+                policy=eligibility_policy,
+            )
+            if assessment.blocking_reasons:
+                st.warning("Local evidence assessment retained with blocking reason(s): " + ", ".join(assessment.blocking_reasons))
+            else:
+                st.info("Local evidence assessment retained as complete. This is still not paper-run approval or execution permission.")
+        eligibility_history = service.recent_paper_run_eligibility()
+        if not eligibility_history:
+            st.info("No local paper-run evidence assessment has been retained. Recording an assessment cannot enable paper activity or any external capability.")
+        else:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Evidence ID": item.evidence_id,
+                            "State": item.state.value.replace("_", " "),
+                            "Batch": item.batch_id,
+                            "Instrument": item.instrument_id,
+                            "Research manifest": item.manifest_id or "Unavailable",
+                            "Robustness evidence": item.robustness_evidence_id or "Unavailable",
+                            "Central policy": item.central_policy_version,
+                            "Kill-switch evidence": item.kill_switch_change_id,
+                            "Blocking reasons": ", ".join(item.blocking_reasons) or "None — evidence only",
+                            "Assessed": item.evaluated_at,
+                        }
+                        for item in eligibility_history
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+        st.caption(
+            "An `EVIDENCE COMPLETE` row only means the listed retained records were present and within this local policy’s declared age limits at assessment time. Each simulated proposal remains subject to the existing independent promotion resolver and deterministic proposal-level risk decision."
+        )
     change_left, change_right = st.columns([1.1, 0.9])
     with change_left:
         control_reason = st.text_input("Durable kill-switch change reason", value="local fixture operator action")

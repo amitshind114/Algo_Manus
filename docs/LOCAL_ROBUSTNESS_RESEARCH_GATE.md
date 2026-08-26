@@ -32,7 +32,7 @@ Each eligible partition uses the established bar backtester. A signal derived fr
 
 The caller supplies a non-empty mapping of named strategy parameters to one or more candidate values. The service verifies parameter names against the selected registered strategy and validates every Cartesian-grid cell through the existing shared parameter schema before any backtest is run. Invalid, unknown, or cross-field-invalid values fail explicitly. The policy cap must be between 1 and 64 cells; a larger grid is rejected rather than truncated or partially evaluated.
 
-The workbench demonstrates a deliberately fixed four-cell SMA crossover grid, a 60% chronological in-sample segment, and a one-bar embargo. Its data is explicitly labelled deterministic fixture data. This visible demonstration must never be interpreted as broker data, market evidence, or an invitation to choose one row over another.
+The workbench demonstrates a deliberately fixed four-cell SMA crossover grid, a 50% chronological in-sample segment, and a one-bar embargo. Its data is explicitly labelled deterministic fixture data. This visible demonstration must never be interpreted as broker data, market evidence, or an invitation to choose one row over another.
 
 ## Retained immutable evidence
 

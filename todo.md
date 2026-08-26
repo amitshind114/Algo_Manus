@@ -118,3 +118,14 @@
 - [x] Document robustness assumptions, non-claims, overfitting/selection-bias limits, dataset limitations and no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option K changes to `main`, then report completion and request the next separate approval.
+
+## Option L — explicit local paper-run eligibility and evidence gate
+
+- [x] Audit the existing paper-promotion resolver, deterministic risk evidence, retained experiment/manifest validation, robustness evidence and local paper ledger seams.
+- [x] Define failing deterministic acceptance tests for explicit eligibility states, named blocking reasons, immutable evidence identity, restart retention, stale/missing evidence refusal and no-actionable capability.
+- [x] Implement a local read/evaluation service that resolves declared research, validation, robustness and risk evidence without changing promotion, risk or paper-event semantics.
+- [x] Retain immutable local eligibility evidence and expose it through an application read service without broker, market-data, order, cancellation, scheduler, worker or execution capability.
+- [x] Expose a display-safe eligibility/evidence view in the workbench without any approval, promotion, order or paper-run control.
+- [x] Document eligibility semantics, blocking-reason interpretation, evidence limitations, fixture distinction and strict no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option L changes to `main`, then report completion and request the next separate approval.
