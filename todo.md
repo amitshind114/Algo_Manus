@@ -149,3 +149,13 @@
 - [x] Document linkage semantics, named mismatch conditions, fixture/manual-declaration limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option N changes to `main`, then report completion and request the next separate approval.
+
+## Option O — read-only evidence freshness and lineage-coverage dashboard
+
+- [x] Audit retained robustness, paper-run, dataset-review and cross-evidence timestamps, states, repositories and workbench composition seams.
+- [x] Define failing deterministic acceptance tests for declared freshness policy, stale/current/unknown coverage, blocked and exact-link counts, missing evidence, restart-safe reads and no-actionable capability.
+- [x] Implement a local read-only freshness and lineage-coverage aggregation service without creating, changing or resolving any evidence record or downstream gate.
+- [x] Expose a display-safe evidence freshness and lineage-coverage dashboard in the workbench without approval, promotion, order, paper-run, broker, feed, scheduler or execution controls.
+- [x] Document dashboard semantics, counting/freshness limits, fixture/manual-declaration limitations and strict no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option O changes to `main`, then report completion and request the next separate approval.

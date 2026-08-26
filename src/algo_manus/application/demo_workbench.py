@@ -48,6 +48,11 @@ from algo_manus.application.cross_evidence_linkage import (
     CrossEvidenceLinkage,
     LocalCrossEvidenceLinkageReadService,
 )
+from algo_manus.application.evidence_coverage_dashboard import (
+    EvidenceFreshnessCoverageDashboard,
+    EvidenceFreshnessCoveragePolicy,
+    LocalEvidenceFreshnessCoverageReadService,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -554,6 +559,25 @@ class FixtureWorkbenchService:
             self._paper_run_eligibility,
             self._dataset_review,
         ).link(paper_run_evidence_id)
+
+    def evidence_freshness_coverage(
+        self,
+        *,
+        evaluated_at: datetime | None = None,
+    ) -> EvidenceFreshnessCoverageDashboard:
+        """Read bounded local evidence coverage only; never refresh, write, or resolve a gate."""
+
+        return LocalEvidenceFreshnessCoverageReadService(
+            self._robustness,
+            self._paper_run_eligibility,
+            self._dataset_review,
+        ).read(
+            policy=EvidenceFreshnessCoveragePolicy(
+                "local-evidence-coverage-v1",
+                maximum_evidence_age=timedelta(days=90),
+            ),
+            evaluated_at=evaluated_at,
+        )
 
     def recent_experiments(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
         """Return local persisted fixture batches newest-first for restart-safe workbench history."""

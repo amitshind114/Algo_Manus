@@ -457,6 +457,45 @@ def _overview(st, service, pd) -> None:
                     width="stretch",
                 )
         st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness, and they do not repair any result.")
+    st.divider()
+    _evidence_freshness_coverage_dashboard(st, service, pd)
+
+
+def _evidence_freshness_coverage_dashboard(st, service, pd) -> None:
+    """Render a bounded read-only aggregate; it cannot refresh, write, or resolve evidence."""
+
+    st.subheader("Evidence freshness and lineage coverage")
+    st.caption(
+        "A bounded local read of retained robustness, paper-run, dataset-review and exact-link evidence. Freshness uses the declared local 90-day display policy at render time; it does not validate data, alter any gate, retrieve data, contact an external provider, or run a timed or execution action."
+    )
+    dashboard = service.evidence_freshness_coverage()
+    summary = dashboard.summary
+    paper, robustness, review, linkage = st.columns(4)
+    paper.metric("Paper evidence", summary.paper_total_count, f"{summary.paper_current_count} current · {summary.paper_stale_count} stale")
+    robustness.metric("Robustness evidence", summary.robustness_total_count, f"{summary.robustness_current_count} current · {summary.robustness_stale_count} stale")
+    review.metric("Review evidence", summary.review_total_count, f"{summary.review_current_count} current · {summary.review_stale_count} stale")
+    linkage.metric("Exact review links", summary.exact_link_complete_count, f"{summary.lineage_mismatch_count} mismatched · {summary.review_missing_count} missing")
+    condition_rows = [
+        {
+            "Paper evidence": item.paper_run_evidence_id,
+            "Batch": item.batch_id,
+            "Dataset": item.dataset_id or "—",
+            "Instrument": item.instrument_id,
+            "Paper state / freshness": f"{item.paper_state} / {item.paper_freshness.value}",
+            "Robustness / freshness": f"{item.robustness_evidence_id or 'Missing'} / {item.robustness_freshness.value}",
+            "Review / freshness": f"{item.dataset_review_evidence_id or 'Missing'} / {item.dataset_review_freshness.value}",
+            "Linkage": item.linkage_state,
+            "Named conditions": ", ".join(item.conditions) or "None — retained relationship only",
+        }
+        for item in dashboard.rows
+    ]
+    if not condition_rows:
+        st.info("No retained paper-run evidence is available for coverage rows. This dashboard cannot create or request any evidence.")
+    else:
+        st.dataframe(pd.DataFrame(condition_rows), hide_index=True, width="stretch")
+    st.caption(
+        "Current/stale/unknown are display-time age interpretations only. Exact linkage means retained dataset and instrument identifiers matched; it does not make any research, review, paper-run, risk or execution state valid, approved or actionable."
+    )
 
 
 def _data_and_instruments(
