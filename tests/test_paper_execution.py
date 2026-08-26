@@ -86,7 +86,12 @@ class PaperExecutionTests(unittest.TestCase):
         self.assertEqual(filled.status, PaperOrderStatus.FILLED)
         self.assertEqual(
             [event.event_type for event in events],
-            [PaperEventType.RISK_DECISION, PaperEventType.ORDER_SUBMITTED, PaperEventType.ORDER_FILLED],
+            [
+                PaperEventType.ORDER_PROPOSED,
+                PaperEventType.RISK_DECISION,
+                PaperEventType.ORDER_ACCEPTED,
+                PaperEventType.ORDER_FILLED,
+            ],
         )
 
     def test_kill_switch_rejects_before_submission(self) -> None:
@@ -106,7 +111,7 @@ class PaperExecutionTests(unittest.TestCase):
         self.assertEqual(submission.order.status, PaperOrderStatus.REJECTED)
         self.assertEqual(
             [event.event_type for event in events],
-            [PaperEventType.RISK_DECISION, PaperEventType.ORDER_REJECTED],
+            [PaperEventType.ORDER_PROPOSED, PaperEventType.RISK_DECISION, PaperEventType.ORDER_REJECTED],
         )
 
     def test_missing_context_defers_before_legacy_paper_submission(self) -> None:
@@ -127,7 +132,7 @@ class PaperExecutionTests(unittest.TestCase):
         self.assertEqual(submission.order.status, PaperOrderStatus.REJECTED)
         self.assertEqual(
             [event.event_type for event in self.ledger.events_for(self.intent.order_id)],
-            [PaperEventType.RISK_DECISION, PaperEventType.ORDER_REJECTED],
+            [PaperEventType.ORDER_PROPOSED, PaperEventType.RISK_DECISION, PaperEventType.ORDER_REJECTED],
         )
 
     def test_existing_ledger_order_identity_rejects_duplicate_submission(self) -> None:
@@ -170,7 +175,12 @@ class PaperExecutionTests(unittest.TestCase):
         self.assertEqual(cancelled.status, PaperOrderStatus.CANCELLED)
         self.assertEqual(
             [event.event_type for event in self.ledger.events_for(self.intent.order_id)],
-            [PaperEventType.RISK_DECISION, PaperEventType.ORDER_SUBMITTED, PaperEventType.ORDER_CANCELLED],
+            [
+                PaperEventType.ORDER_PROPOSED,
+                PaperEventType.RISK_DECISION,
+                PaperEventType.ORDER_ACCEPTED,
+                PaperEventType.ORDER_CANCELLED,
+            ],
         )
         with self.assertRaisesRegex(ValueError, "not currently submitted"):
             self.service.fill(submitted.order, fill_price=100, now=self.now)
@@ -197,7 +207,7 @@ class PaperExecutionTests(unittest.TestCase):
         self.assertFalse(submission.decision.allowed)
         self.assertEqual(submission.decision.code, "RESEARCH_EVIDENCE_MISSING")
         self.assertEqual(submission.order.status, PaperOrderStatus.REJECTED)
-        self.assertIn('"research_manifest_id":null', self.ledger.events_for(self.intent.order_id)[0].payload)
+        self.assertIn('"research_manifest_id":null', self.ledger.events_for(self.intent.order_id)[1].payload)
 
     def test_promotion_configured_service_records_exact_evidence_identifiers(self) -> None:
         service = PaperExecutionService(
@@ -223,7 +233,7 @@ class PaperExecutionTests(unittest.TestCase):
             now=self.now,
         )
 
-        payload = self.ledger.events_for(self.intent.order_id)[0].payload
+        payload = self.ledger.events_for(self.intent.order_id)[1].payload
         self.assertTrue(submission.decision.allowed)
         self.assertIn('"research_batch_id":"EXP-promotion"', payload)
         self.assertIn('"research_manifest_id":"RUN-promotion"', payload)

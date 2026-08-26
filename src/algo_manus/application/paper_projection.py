@@ -1,11 +1,18 @@
-"""Read-only replay of durable local paper events into a deterministic projection."""
+"""Deterministic replay of local immutable paper events into paper-only state.
+
+Cash, positions and realised P&L move only when replay applies retained local
+fill evidence.  Intent, risk, acceptance, cancellation and reconciliation do
+not themselves change portfolio values.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import json
 from typing import Protocol
 
+from algo_manus.domain.execution import ReconciliationDisposition
 from algo_manus.domain.paper import (
     PaperEvent,
     PaperEventType,
@@ -34,9 +41,12 @@ class _MutableOrder:
     side: OrderSide | None = None
     quantity: int | None = None
     status: PaperOrderStatus = PaperOrderStatus.PENDING_RISK
-    submitted_at: object | None = None
-    filled_at: object | None = None
+    submitted_at: datetime | None = None
+    filled_at: datetime | None = None
     fill_price: float | None = None
+    filled_quantity: int = 0
+    risk_seen: bool = False
+    reconciliation_disposition: ReconciliationDisposition | None = None
 
 
 class PaperPortfolioProjector:
@@ -56,63 +66,77 @@ class PaperPortfolioProjector:
             if payload is None:
                 continue
             order = orders.setdefault(event.order_id, _MutableOrder(instrument_id=event.instrument_id))
-            side = self._side(payload)
-            quantity = self._quantity(payload)
-            if side is not None and order.side is None:
-                order.side = side
-            if quantity is not None and order.quantity is None:
-                order.quantity = quantity
-
-            next_status = PaperOrderLifecycle.apply(order.status, event.event_type)
+            if order.instrument_id != event.instrument_id:
+                self._invalid(event.event_id, unprojectable)
+                continue
+            risk_allowed: bool | None = None
+            if event.event_type is PaperEventType.RISK_DECISION:
+                candidate = payload.get("allowed")
+                if not isinstance(candidate, bool):
+                    self._invalid(event.event_id, unprojectable)
+                    continue
+                risk_allowed = candidate
+                order.risk_seen = True
+            if event.event_type is PaperEventType.ORDER_REJECTED and not order.risk_seen:
+                self._invalid(event.event_id, unprojectable)
+                continue
+            next_status = PaperOrderLifecycle.apply(order.status, event.event_type, risk_allowed=risk_allowed)
             if next_status is None:
-                unprojectable.append(event.event_id)
+                self._invalid(event.event_id, unprojectable)
                 continue
-            if event.event_type is PaperEventType.ORDER_REJECTED:
+
+            if event.event_type is PaperEventType.ORDER_PROPOSED:
+                if not self._apply_order_terms(order, payload):
+                    self._invalid(event.event_id, unprojectable)
+                    continue
                 order.status = next_status
                 continue
-            if event.event_type is PaperEventType.ORDER_CANCELLED:
+            if event.event_type is PaperEventType.RISK_DECISION:
                 order.status = next_status
                 continue
-            if event.event_type is PaperEventType.ORDER_SUBMITTED:
-                if side is None or quantity is None:
-                    unprojectable.append(event.event_id)
+            if event.event_type in {PaperEventType.ORDER_ACCEPTED, PaperEventType.ORDER_SUBMITTED}:
+                if not self._apply_order_terms(order, payload):
+                    self._invalid(event.event_id, unprojectable)
                     continue
                 order.status = next_status
                 order.submitted_at = event.occurred_at
                 continue
-            if event.event_type is not PaperEventType.ORDER_FILLED:
-                continue
-
-            fill_price = payload.get("fill_price")
-            if (
-                side is None
-                or quantity is None
-                or quantity != order.quantity
-                or not isinstance(fill_price, (int, float))
-                or fill_price <= 0
-            ):
-                unprojectable.append(event.event_id)
-                continue
-            position = positions.setdefault(event.instrument_id, _MutablePosition())
-            if side is OrderSide.BUY:
-                new_quantity = position.quantity + quantity
-                position.average_entry_price = (
-                    ((position.quantity * position.average_entry_price) + (quantity * float(fill_price))) / new_quantity
-                )
-                position.quantity = new_quantity
-                cash -= quantity * float(fill_price)
-            else:
-                if quantity > position.quantity:
-                    unprojectable.append(event.event_id)
+            if event.event_type is PaperEventType.ORDER_WORKING:
+                if not self._matching_optional_terms(order, payload):
+                    self._invalid(event.event_id, unprojectable)
                     continue
-                cash += quantity * float(fill_price)
-                realized_pnl += quantity * (float(fill_price) - position.average_entry_price)
-                position.quantity -= quantity
-                if position.quantity == 0:
-                    position.average_entry_price = 0.0
-            order.status = next_status
-            order.filled_at = event.occurred_at
-            order.fill_price = float(fill_price)
+                order.status = next_status
+                continue
+            if event.event_type in {PaperEventType.ORDER_REJECTED, PaperEventType.ORDER_CANCELLED}:
+                if not self._matching_optional_terms(order, payload):
+                    self._invalid(event.event_id, unprojectable)
+                    continue
+                order.status = next_status
+                continue
+            if event.event_type in {PaperEventType.ORDER_PARTIALLY_FILLED, PaperEventType.ORDER_FILLED}:
+                applied = self._apply_fill(order, event, payload, positions, unprojectable)
+                if applied is None:
+                    continue
+                cash_delta, pnl_delta = applied
+                cash += cash_delta
+                realized_pnl += pnl_delta
+                order.status = next_status
+                order.filled_at = event.occurred_at
+                order.fill_price = float(payload["fill_price"])
+                continue
+            if event.event_type is PaperEventType.RECONCILIATION_RECORDED:
+                try:
+                    disposition = ReconciliationDisposition(payload.get("disposition"))
+                except ValueError:
+                    self._invalid(event.event_id, unprojectable)
+                    continue
+                if not isinstance(payload.get("reason"), str) or not payload["reason"].strip():
+                    self._invalid(event.event_id, unprojectable)
+                    continue
+                order.status = next_status
+                order.reconciliation_disposition = disposition
+                continue
+            self._invalid(event.event_id, unprojectable)
 
         projected_positions = tuple(
             PaperPositionProjection(instrument_id=instrument_id, quantity=position.quantity, average_entry_price=position.average_entry_price)
@@ -129,18 +153,103 @@ class PaperPortfolioProjector:
                 submitted_at=order.submitted_at,
                 filled_at=order.filled_at,
                 fill_price=order.fill_price,
+                filled_quantity=order.filled_quantity,
+                remaining_quantity=order.quantity - order.filled_quantity if order.quantity is not None else None,
+                reconciliation_disposition=order.reconciliation_disposition,
             )
             for order_id, order in sorted(orders.items())
         )
+        accepted_statuses = {
+            PaperOrderStatus.ACCEPTED,
+            PaperOrderStatus.WORKING,
+            PaperOrderStatus.PARTIALLY_FILLED,
+            PaperOrderStatus.FILLED,
+            PaperOrderStatus.CANCELLED,
+            PaperOrderStatus.RECONCILED,
+        }
         return PaperPortfolioProjection(
             starting_cash=starting_cash,
             cash=cash,
             realized_pnl=realized_pnl,
             positions=projected_positions,
             orders=projected_orders,
-            session_order_count=sum(order.status in {PaperOrderStatus.SUBMITTED, PaperOrderStatus.FILLED} for order in orders.values()),
+            session_order_count=sum(order.status in accepted_statuses for order in orders.values()),
             unprojectable_event_ids=tuple(unprojectable),
         )
+
+    def _apply_fill(
+        self,
+        order: _MutableOrder,
+        event: PaperEvent,
+        payload: dict[str, object],
+        positions: dict[str, _MutablePosition],
+        unprojectable: list[str],
+    ) -> tuple[float, float] | None:
+        side = self._side(payload)
+        quantity = self._quantity(payload)
+        fill_price = payload.get("fill_price")
+        cumulative = payload.get("cumulative_filled_quantity")
+        if cumulative is None and event.event_type is PaperEventType.ORDER_FILLED:
+            cumulative = order.quantity
+        if (
+            order.side is None
+            or order.quantity is None
+            or side is not order.side
+            or quantity is None
+            or not isinstance(cumulative, int)
+            or cumulative != order.filled_quantity + quantity
+            or cumulative > order.quantity
+            or not isinstance(fill_price, (int, float))
+            or fill_price <= 0
+        ):
+            self._invalid(event.event_id, unprojectable)
+            return None
+        if event.event_type is PaperEventType.ORDER_PARTIALLY_FILLED and not 0 < cumulative < order.quantity:
+            self._invalid(event.event_id, unprojectable)
+            return None
+        if event.event_type is PaperEventType.ORDER_FILLED and cumulative != order.quantity:
+            self._invalid(event.event_id, unprojectable)
+            return None
+        position = positions.setdefault(event.instrument_id, _MutablePosition())
+        order.filled_quantity = cumulative
+        if side is OrderSide.BUY:
+            new_quantity = position.quantity + quantity
+            position.average_entry_price = ((position.quantity * position.average_entry_price) + (quantity * float(fill_price))) / new_quantity
+            position.quantity = new_quantity
+            return (-quantity * float(fill_price), 0.0)
+        if quantity > position.quantity:
+            self._invalid(event.event_id, unprojectable)
+            order.filled_quantity -= quantity
+            return None
+        realized = quantity * (float(fill_price) - position.average_entry_price)
+        position.quantity -= quantity
+        if position.quantity == 0:
+            position.average_entry_price = 0.0
+        return (quantity * float(fill_price), realized)
+
+    @staticmethod
+    def _apply_order_terms(order: _MutableOrder, payload: dict[str, object]) -> bool:
+        side = PaperPortfolioProjector._side(payload)
+        quantity = PaperPortfolioProjector._quantity(payload)
+        if side is None or quantity is None:
+            return False
+        if order.side is not None and order.side is not side:
+            return False
+        if order.quantity is not None and order.quantity != quantity:
+            return False
+        order.side = side
+        order.quantity = quantity
+        return True
+
+    @staticmethod
+    def _matching_optional_terms(order: _MutableOrder, payload: dict[str, object]) -> bool:
+        side = PaperPortfolioProjector._side(payload)
+        quantity = PaperPortfolioProjector._quantity(payload)
+        if side is not None and order.side is not None and side is not order.side:
+            return False
+        if quantity is not None and order.quantity is not None and quantity != order.quantity:
+            return False
+        return True
 
     @staticmethod
     def _payload(event: PaperEvent, unprojectable: list[str]) -> dict[str, object] | None:
@@ -148,10 +257,10 @@ class PaperPortfolioProjector:
             canonical = json.loads(event.payload)
             payload = canonical.get("payload")
         except (TypeError, json.JSONDecodeError):
-            unprojectable.append(event.event_id)
+            PaperPortfolioProjector._invalid(event.event_id, unprojectable)
             return None
         if not isinstance(payload, dict):
-            unprojectable.append(event.event_id)
+            PaperPortfolioProjector._invalid(event.event_id, unprojectable)
             return None
         return payload
 
@@ -167,6 +276,11 @@ class PaperPortfolioProjector:
     def _quantity(payload: dict[str, object]) -> int | None:
         value = payload.get("quantity")
         return value if isinstance(value, int) and value > 0 else None
+
+    @staticmethod
+    def _invalid(event_id: str, unprojectable: list[str]) -> None:
+        if event_id not in unprojectable:
+            unprojectable.append(event_id)
 
 
 class PaperOperationsReadService:

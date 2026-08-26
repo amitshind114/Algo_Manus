@@ -62,7 +62,7 @@ class PaperProjectionTests(unittest.TestCase):
             restarted = PaperOperationsReadService(SqlitePaperLedger(path))
             projection = restarted.portfolio(starting_cash=2_000)
 
-            self.assertEqual(len(restarted.events()), 6)
+            self.assertEqual(len(restarted.events()), 8)
             self.assertEqual(projection.cash, 1_380)
             self.assertEqual(projection.realized_pnl, 40)
             self.assertEqual(projection.positions[0].quantity, 6)
@@ -96,14 +96,18 @@ class PaperProjectionTests(unittest.TestCase):
         def event(event_id: str, event_type: PaperEventType, payload: str) -> PaperEvent:
             return PaperEvent(event_id, event_type, self.now, "invalid-sequence", self.instrument_id, payload)
 
-        submitted = '{"payload":{"side":"BUY","quantity":10,"reference_price":100}}'
+        proposed = '{"payload":{"side":"BUY","quantity":10,"reference_price":100}}'
+        approved = '{"payload":{"allowed":true}}'
+        accepted = '{"payload":{"side":"BUY","quantity":10,"reference_price":100}}'
         filled = '{"payload":{"side":"BUY","quantity":10,"fill_price":100}}'
         partial = '{"payload":{"side":"BUY","quantity":5,"fill_price":100}}'
         replay = __import__("algo_manus.application.paper_projection", fromlist=["PaperPortfolioProjector"]).PaperPortfolioProjector()
         result = replay.replay(
             (
                 event("fill-before-submit", PaperEventType.ORDER_FILLED, filled),
-                event("submitted", PaperEventType.ORDER_SUBMITTED, submitted),
+                event("proposed", PaperEventType.ORDER_PROPOSED, proposed),
+                event("approved", PaperEventType.RISK_DECISION, approved),
+                event("accepted", PaperEventType.ORDER_ACCEPTED, accepted),
                 event("partial-fill", PaperEventType.ORDER_FILLED, partial),
                 event("valid-fill", PaperEventType.ORDER_FILLED, filled),
                 event("duplicate-fill", PaperEventType.ORDER_FILLED, filled),

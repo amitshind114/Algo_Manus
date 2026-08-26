@@ -93,13 +93,13 @@ class PaperOperationAuditTests(unittest.TestCase):
         rows = restarted.rows()
         by_order = {row.order_id: [item for item in rows if item.order_id == row.order_id] for row in rows}
 
-        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-filled"]], ["PENDING_RISK", "SUBMITTED", "FILLED"])
-        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-cancelled"]], ["PENDING_RISK", "SUBMITTED", "CANCELLED"])
-        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-rejected"]], ["PENDING_RISK", "REJECTED"])
-        risk_row = by_order["paper-audit-filled"][0]
+        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-filled"]], ["PENDING_RISK", "RISK_APPROVED", "ACCEPTED", "FILLED"])
+        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-cancelled"]], ["PENDING_RISK", "RISK_APPROVED", "ACCEPTED", "CANCELLED"])
+        self.assertEqual([row.lifecycle_state for row in by_order["paper-audit-rejected"]], ["PENDING_RISK", "PENDING_RISK", "REJECTED"])
+        risk_row = by_order["paper-audit-filled"][1]
         self.assertEqual(risk_row.research_batch_id, "EXP-audit")
         self.assertEqual(risk_row.research_manifest_id, "RUN-audit")
-        self.assertEqual(by_order["paper-audit-filled"][1].quantity, 5)
+        self.assertEqual(by_order["paper-audit-filled"][2].quantity, 5)
         self.assertEqual(by_order["paper-audit-filled"][-1].fill_price, 101.0)
 
     def test_malformed_payload_and_invalid_sequence_remain_visible_without_invention(self) -> None:
@@ -131,8 +131,8 @@ class PaperOperationAuditTests(unittest.TestCase):
         restarted = PaperOperationAuditTimelineReadService(SqlitePaperLedger(self.path))
         filtered = restarted.rows(order_id="paper-audit-second")
 
-        self.assertEqual([row.order_id for row in filtered], ["paper-audit-second"] * 3)
-        self.assertEqual([row.lifecycle_state for row in filtered], ["PENDING_RISK", "SUBMITTED", "CANCELLED"])
+        self.assertEqual([row.order_id for row in filtered], ["paper-audit-second"] * 4)
+        self.assertEqual([row.lifecycle_state for row in filtered], ["PENDING_RISK", "RISK_APPROVED", "ACCEPTED", "CANCELLED"])
 
     def test_order_filter_rejects_blank_or_unknown_order_identifiers(self) -> None:
         self._submit(order_id="paper-audit-known")
@@ -186,8 +186,8 @@ class PaperOperationAuditTests(unittest.TestCase):
             rows["EVT-audit-both-invalid"].integrity_status,
             "MALFORMED_PAYLOAD_AND_INVALID_LIFECYCLE",
         )
-        self.assertEqual(summary.total_events, 5)
-        self.assertEqual(summary.valid_events, 2)
+        self.assertEqual(summary.total_events, 6)
+        self.assertEqual(summary.valid_events, 3)
         self.assertEqual(summary.malformed_payload_events, 2)
         self.assertEqual(summary.invalid_lifecycle_events, 2)
 
@@ -220,8 +220,8 @@ class PaperOperationAuditTests(unittest.TestCase):
         issue_rows = restarted.rows(integrity_filter="ISSUES")
         issue_summary = restarted.integrity(integrity_filter="ISSUES")
 
-        self.assertEqual(len(all_rows), 4)
-        self.assertEqual([row.integrity_status for row in valid_rows], ["VALID", "VALID"])
+        self.assertEqual(len(all_rows), 5)
+        self.assertEqual([row.integrity_status for row in valid_rows], ["VALID", "VALID", "VALID"])
         self.assertEqual(
             {row.integrity_status for row in issue_rows},
             {"MALFORMED_PAYLOAD", "INVALID_LIFECYCLE"},
@@ -246,7 +246,7 @@ class PaperOperationAuditTests(unittest.TestCase):
         fill_rows = restarted.rows(event_type_filter="ORDER_FILLED")
         fill_summary = restarted.integrity(event_type_filter="ORDER_FILLED")
 
-        self.assertEqual([row.event_type for row in all_rows], ["RISK_DECISION", "ORDER_SUBMITTED", "ORDER_FILLED"])
+        self.assertEqual([row.event_type for row in all_rows], ["ORDER_PROPOSED", "RISK_DECISION", "ORDER_ACCEPTED", "ORDER_FILLED"])
         self.assertEqual([row.event_type for row in fill_rows], ["ORDER_FILLED"])
         self.assertEqual(fill_summary.total_events, 1)
         self.assertEqual(fill_summary.valid_events, 1)
@@ -277,7 +277,7 @@ class PaperOperationAuditTests(unittest.TestCase):
         bravo_rows = restarted.rows(instrument_id_filter="FIXTURE:NSE:EQ:BRAVO")
         bravo_summary = restarted.integrity(instrument_id_filter="FIXTURE:NSE:EQ:BRAVO")
 
-        self.assertEqual(len(all_rows), 3)
+        self.assertEqual(len(all_rows), 4)
         self.assertEqual([row.instrument_id for row in bravo_rows], ["FIXTURE:NSE:EQ:BRAVO"])
         self.assertEqual(bravo_summary.total_events, 1)
         self.assertEqual(bravo_summary.valid_events, 1)
@@ -301,8 +301,8 @@ class PaperOperationAuditTests(unittest.TestCase):
         fill_rows = restarted.rows(start_time=fill_time, end_time=fill_time)
         fill_summary = restarted.integrity(start_time=fill_time, end_time=fill_time)
 
-        self.assertEqual(len(all_rows), 3)
-        self.assertEqual([row.event_type for row in opening_rows], ["RISK_DECISION", "ORDER_SUBMITTED"])
+        self.assertEqual(len(all_rows), 4)
+        self.assertEqual([row.event_type for row in opening_rows], ["ORDER_PROPOSED", "RISK_DECISION", "ORDER_ACCEPTED"])
         self.assertEqual([row.event_type for row in fill_rows], ["ORDER_FILLED"])
         self.assertEqual(fill_summary.total_events, 1)
         self.assertEqual(fill_summary.valid_events, 1)
@@ -376,11 +376,11 @@ class PaperOperationAuditTests(unittest.TestCase):
         self.assertEqual(issue_preset.label, "Integrity issues")
         self.assertEqual(
             len(restarted.rows(integrity_filter=all_preset.integrity_filter)),
-            3,
+            4,
         )
         self.assertEqual(
             len(restarted.rows(integrity_filter=valid_preset.integrity_filter)),
-            2,
+            3,
         )
         self.assertEqual(
             len(restarted.rows(integrity_filter=issue_preset.integrity_filter)),
@@ -493,7 +493,7 @@ class PaperOperationAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "lifecycle_state_filter"):
             audit.rows(lifecycle_state_filter=" ")
         with self.assertRaisesRegex(ValueError, "unknown"):
-            audit.rows(lifecycle_state_filter="RECONCILED")
+            audit.rows(lifecycle_state_filter="UNKNOWN_STATE")
 
 
 if __name__ == "__main__":

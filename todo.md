@@ -42,3 +42,15 @@
 - [x] Define the first auditable end-to-end paper-operation slice from retained data through strategy, deterministic risk decision, event evidence, simulated outcome and reporting.
 - [x] Document the architecture decisions, regulatory assumptions requiring current broker/exchange verification, and a strict no-live-execution gate.
 - [x] Validate the roadmap against existing tests and source boundaries, commit the reconciliation documentation, and request approval for the first implementation slice.
+
+## Option E — canonical paper event spine and event-derived projections
+
+- [x] Audit the existing paper ledger, execution contracts, central risk engine, risk-control persistence and projection services for canonical integration seams.
+- [x] Define one immutable paper-event lifecycle for proposal, risk decision, accepted/rejected, working, partial fill, fill, cancellation and reconciliation outcomes.
+- [x] Implement the application service so every accepted paper lifecycle path records a deterministic risk decision before any accepted order event.
+- [x] Implement replay-safe position and P&L projections derived solely from retained fill and reconciliation events, never from order intent or mutable UI state.
+- [x] Add deterministic lifecycle, risk-ordering, partial-fill, cancellation, replay, duplicate/restart and no-broker-capability tests.
+- [x] Expose display-safe paper-event timeline, projected positions and projected P&L through application-service read paths only.
+- [x] Update local documentation with simulation assumptions, event evidence, explicit exclusions and remaining reconciliation limitations.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option E changes to `main`, then report completion and request the next separate build approval.

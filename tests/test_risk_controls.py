@@ -69,7 +69,7 @@ class RiskControlPersistenceTests(unittest.TestCase):
                 now=self.now,
             )
 
-            event_payload = ledger.events_for(intent.order_id)[0].payload
+            event_payload = ledger.events_for(intent.order_id)[1].payload
             self.assertFalse(submission.decision.allowed)
             self.assertEqual(submission.central_decision.code, RiskDecisionCode.KILL_SWITCH_ACTIVE)
             self.assertIn(snapshot.kill_switch_change.change_id, event_payload)

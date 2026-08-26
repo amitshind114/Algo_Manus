@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from algo_manus.domain.execution import ReconciliationDisposition
 from algo_manus.domain.risk import OrderIntent, RiskDecision
 from algo_manus.domain.risk_engine import RiskEngineDecision
 from algo_manus.domain.risk import OrderSide
@@ -13,18 +14,28 @@ from algo_manus.domain.risk import OrderSide
 
 class PaperOrderStatus(StrEnum):
     PENDING_RISK = "PENDING_RISK"
+    RISK_APPROVED = "RISK_APPROVED"
     REJECTED = "REJECTED"
-    SUBMITTED = "SUBMITTED"
+    ACCEPTED = "ACCEPTED"
+    SUBMITTED = "ACCEPTED"  # Backward-compatible alias for prior local projections.
+    WORKING = "WORKING"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
     FILLED = "FILLED"
     CANCELLED = "CANCELLED"
+    RECONCILED = "RECONCILED"
 
 
 class PaperEventType(StrEnum):
+    ORDER_PROPOSED = "ORDER_PROPOSED"
     RISK_DECISION = "RISK_DECISION"
-    ORDER_SUBMITTED = "ORDER_SUBMITTED"
+    ORDER_ACCEPTED = "ORDER_ACCEPTED"
+    ORDER_SUBMITTED = "ORDER_SUBMITTED"  # Legacy retained-event compatibility only.
+    ORDER_WORKING = "ORDER_WORKING"
+    ORDER_PARTIALLY_FILLED = "ORDER_PARTIALLY_FILLED"
     ORDER_REJECTED = "ORDER_REJECTED"
     ORDER_FILLED = "ORDER_FILLED"
     ORDER_CANCELLED = "ORDER_CANCELLED"
+    RECONCILIATION_RECORDED = "RECONCILIATION_RECORDED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,21 +56,42 @@ class PaperPromotionEvidence:
 
 
 class PaperOrderLifecycle:
-    """Valid state transitions for one local paper order identity."""
+    """Valid state transitions for one immutable local paper-event stream."""
 
     _TRANSITIONS = {
-        (PaperOrderStatus.PENDING_RISK, PaperEventType.ORDER_SUBMITTED): PaperOrderStatus.SUBMITTED,
+        (PaperOrderStatus.PENDING_RISK, PaperEventType.ORDER_PROPOSED): PaperOrderStatus.PENDING_RISK,
         (PaperOrderStatus.PENDING_RISK, PaperEventType.ORDER_REJECTED): PaperOrderStatus.REJECTED,
-        (PaperOrderStatus.SUBMITTED, PaperEventType.ORDER_FILLED): PaperOrderStatus.FILLED,
-        (PaperOrderStatus.SUBMITTED, PaperEventType.ORDER_CANCELLED): PaperOrderStatus.CANCELLED,
+        (PaperOrderStatus.RISK_APPROVED, PaperEventType.ORDER_ACCEPTED): PaperOrderStatus.ACCEPTED,
+        (PaperOrderStatus.RISK_APPROVED, PaperEventType.ORDER_SUBMITTED): PaperOrderStatus.ACCEPTED,
+        (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_WORKING): PaperOrderStatus.WORKING,
+        (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_PARTIALLY_FILLED): PaperOrderStatus.PARTIALLY_FILLED,
+        (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_FILLED): PaperOrderStatus.FILLED,
+        (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_CANCELLED): PaperOrderStatus.CANCELLED,
+        (PaperOrderStatus.WORKING, PaperEventType.ORDER_PARTIALLY_FILLED): PaperOrderStatus.PARTIALLY_FILLED,
+        (PaperOrderStatus.WORKING, PaperEventType.ORDER_FILLED): PaperOrderStatus.FILLED,
+        (PaperOrderStatus.WORKING, PaperEventType.ORDER_CANCELLED): PaperOrderStatus.CANCELLED,
+        (PaperOrderStatus.PARTIALLY_FILLED, PaperEventType.ORDER_PARTIALLY_FILLED): PaperOrderStatus.PARTIALLY_FILLED,
+        (PaperOrderStatus.PARTIALLY_FILLED, PaperEventType.ORDER_FILLED): PaperOrderStatus.FILLED,
+        (PaperOrderStatus.PARTIALLY_FILLED, PaperEventType.ORDER_CANCELLED): PaperOrderStatus.CANCELLED,
+        (PaperOrderStatus.REJECTED, PaperEventType.RECONCILIATION_RECORDED): PaperOrderStatus.RECONCILED,
+        (PaperOrderStatus.FILLED, PaperEventType.RECONCILIATION_RECORDED): PaperOrderStatus.RECONCILED,
+        (PaperOrderStatus.CANCELLED, PaperEventType.RECONCILIATION_RECORDED): PaperOrderStatus.RECONCILED,
     }
 
     @classmethod
-    def apply(cls, current: PaperOrderStatus, event_type: PaperEventType) -> PaperOrderStatus | None:
-        """Return the next state or ``None`` when the local event is out of sequence."""
+    def apply(
+        cls,
+        current: PaperOrderStatus,
+        event_type: PaperEventType,
+        *,
+        risk_allowed: bool | None = None,
+    ) -> PaperOrderStatus | None:
+        """Return the next state, or ``None`` when retained evidence is out of sequence."""
 
         if event_type is PaperEventType.RISK_DECISION:
-            return current
+            if current is not PaperOrderStatus.PENDING_RISK:
+                return None
+            return PaperOrderStatus.RISK_APPROVED if risk_allowed is True else PaperOrderStatus.PENDING_RISK
         return cls._TRANSITIONS.get((current, event_type))
 
 
@@ -70,6 +102,12 @@ class PaperOrder:
     submitted_at: datetime
     filled_at: datetime | None = None
     fill_price: float | None = None
+    filled_quantity: int = 0
+    reconciliation_disposition: ReconciliationDisposition | None = None
+
+    @property
+    def remaining_quantity(self) -> int:
+        return self.intent.quantity - self.filled_quantity
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +148,9 @@ class PaperOrderProjection:
     submitted_at: datetime | None
     filled_at: datetime | None
     fill_price: float | None
+    filled_quantity: int
+    remaining_quantity: int | None
+    reconciliation_disposition: ReconciliationDisposition | None
 
 
 @dataclass(frozen=True, slots=True)

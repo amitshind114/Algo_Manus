@@ -1328,6 +1328,43 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         projection_tiles[1].metric("Projected cash", f"₹{projection.cash:,.2f}")
         projection_tiles[2].metric("Realized P&L", f"₹{projection.realized_pnl:,.2f}")
         projection_tiles[3].metric("Open local positions", len(projection.positions))
+        with st.expander("Event-derived local positions and simulated P&L", expanded=True):
+            st.caption(
+                "These values are replayed from immutable local fill events in the paper ledger. "
+                "They are not broker positions, account balances, market valuations or reconciliation proof."
+            )
+            position_rows = [
+                {
+                    "Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol
+                    if item.instrument_id in by_id
+                    else item.instrument_id,
+                    "Quantity": item.quantity,
+                    "Average entry": item.average_entry_price,
+                }
+                for item in projection.positions
+            ]
+            if position_rows:
+                st.dataframe(pd.DataFrame(position_rows), hide_index=True, width="stretch")
+            else:
+                st.info("No open local paper positions are derived from retained fill evidence.")
+            order_rows = [
+                {
+                    "Order": item.order_id,
+                    "Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol
+                    if item.instrument_id in by_id
+                    else item.instrument_id,
+                    "Side": item.side.value if item.side is not None else "—",
+                    "Lifecycle": item.status.value,
+                    "Order quantity": item.quantity if item.quantity is not None else "—",
+                    "Filled": item.filled_quantity,
+                    "Remaining": item.remaining_quantity if item.remaining_quantity is not None else "—",
+                    "Last fill price": item.fill_price if item.fill_price is not None else "—",
+                    "Reconciliation evidence": item.reconciliation_disposition.value if item.reconciliation_disposition else "—",
+                }
+                for item in projection.orders
+            ]
+            if order_rows:
+                st.dataframe(pd.DataFrame(order_rows), hide_index=True, width="stretch")
         risk_tiles = st.columns(4)
         gross_limit = snapshot.policy.max_gross_notional or 0
         instrument_limit = snapshot.policy.max_notional_per_instrument or 0
@@ -1361,7 +1398,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                     "Time": event.occurred_at,
                     "Event": event.event_type,
                     "Order": event.order_id,
-                    "Instrument": by_id[event.instrument_id].symbol,
+                    "Instrument": by_id.get(event.instrument_id, event.instrument_id).symbol if event.instrument_id in by_id else event.instrument_id,
                     "Central policy": json.loads(event.payload).get("payload", {}).get("central_policy_version"),
                     "Central decision": json.loads(event.payload).get("payload", {}).get("central_decision_type"),
                     "Central code": json.loads(event.payload).get("payload", {}).get("central_decision_code"),
@@ -1420,31 +1457,43 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         "Retained local event type",
                         options=[
                             "All retained event types",
+                            "Proposals",
                             "Risk decisions",
-                            "Submissions",
+                            "Accepted local proposals",
+                            "Working local proposals",
+                            "Partial simulated fills",
                             "Fills",
                             "Cancellations",
                             "Rejections",
+                            "Reconciliation evidence",
                         ],
                         help="Changes only the displayed retained local audit events; it cannot alter lifecycle, paper-operation or broker state.",
                     )
                     event_type_filter = {
                         "All retained event types": "ALL",
+                        "Proposals": "ORDER_PROPOSED",
                         "Risk decisions": "RISK_DECISION",
-                        "Submissions": "ORDER_SUBMITTED",
+                        "Accepted local proposals": "ORDER_ACCEPTED",
+                        "Working local proposals": "ORDER_WORKING",
+                        "Partial simulated fills": "ORDER_PARTIALLY_FILLED",
                         "Fills": "ORDER_FILLED",
                         "Cancellations": "ORDER_CANCELLED",
                         "Rejections": "ORDER_REJECTED",
+                        "Reconciliation evidence": "RECONCILIATION_RECORDED",
                     }[selected_event_type_scope]
                     selected_lifecycle_state_scope = st.selectbox(
                         "Interpreted local lifecycle state",
                         options=[
                             "All interpreted lifecycle states",
                             "Pending-risk state",
-                            "Submitted state",
+                            "Risk-approved state",
+                            "Accepted local state",
+                            "Working local state",
+                            "Partially-filled local state",
                             "Filled state",
                             "Cancelled state",
                             "Rejected state",
+                            "Reconciled local state",
                             "Unprojectable lifecycle state",
                         ],
                         help="Changes only the displayed retained local audit rows by their already-interpreted lifecycle state; it cannot alter lifecycle, paper-operation or broker state.",
@@ -1452,10 +1501,14 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                     lifecycle_state_filter = {
                         "All interpreted lifecycle states": "ALL",
                         "Pending-risk state": "PENDING_RISK",
-                        "Submitted state": "SUBMITTED",
+                        "Risk-approved state": "RISK_APPROVED",
+                        "Accepted local state": "ACCEPTED",
+                        "Working local state": "WORKING",
+                        "Partially-filled local state": "PARTIALLY_FILLED",
                         "Filled state": "FILLED",
                         "Cancelled state": "CANCELLED",
                         "Rejected state": "REJECTED",
+                        "Reconciled local state": "RECONCILED",
                         "Unprojectable lifecycle state": "UNPROJECTABLE",
                     }[selected_lifecycle_state_scope]
                     selected_side_scope = st.selectbox(
@@ -1631,10 +1684,12 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                                         "Instrument": by_id.get(item.instrument_id, item.instrument_id).symbol if item.instrument_id in by_id else item.instrument_id,
                                         "Side": item.side or "—",
                                         "Quantity": item.quantity if item.quantity is not None else "—",
+                                        "Cumulative filled": item.cumulative_filled_quantity if item.cumulative_filled_quantity is not None else "—",
                                         "Reference price": item.reference_price if item.reference_price is not None else "—",
                                         "Fill price": item.fill_price if item.fill_price is not None else "—",
                                         "Decision": item.decision_code or "—",
                                         "Central gate": item.central_decision_type or "—",
+                                        "Reconciliation evidence": item.reconciliation_disposition or "—",
                                         "Research batch": item.research_batch_id or "—",
                                         "Research manifest": item.research_manifest_id or "—",
                                         "Payload valid": item.payload_valid,

@@ -30,12 +30,14 @@ class LocalPaperOperationAuditRow:
     integrity_status: str
     side: str | None
     quantity: int | None
+    cumulative_filled_quantity: int | None
     reference_price: float | None
     fill_price: float | None
     decision_allowed: bool | None
     decision_code: str | None
     central_decision_type: str | None
     central_decision_code: str | None
+    reconciliation_disposition: str | None
     research_batch_id: str | None
     research_manifest_id: str | None
     research_dataset_id: str | None
@@ -111,11 +113,12 @@ class PaperOperationAuditTimelineReadService:
         rows: list[LocalPaperOperationAuditRow] = []
         for event in self._events(limit=limit, order_id=order_id):
             current = states.get(event.order_id, PaperOrderStatus.PENDING_RISK)
-            next_state = PaperOrderLifecycle.apply(current, event.event_type)
+            payload, payload_valid = self._payload(event.payload)
+            risk_allowed = self._boolean(payload, "allowed") if event.event_type is PaperEventType.RISK_DECISION else None
+            next_state = PaperOrderLifecycle.apply(current, event.event_type, risk_allowed=risk_allowed)
             lifecycle_state = "UNPROJECTABLE" if next_state is None else next_state.value
             if next_state is not None:
                 states[event.order_id] = next_state
-            payload, payload_valid = self._payload(event.payload)
             rows.append(
                 LocalPaperOperationAuditRow(
                     event_id=event.event_id,
@@ -128,12 +131,14 @@ class PaperOperationAuditTimelineReadService:
                     integrity_status=self._integrity_status(payload_valid, next_state is not None),
                     side=self._string(payload, "side"),
                     quantity=self._positive_int(payload, "quantity"),
+                    cumulative_filled_quantity=self._positive_int(payload, "cumulative_filled_quantity"),
                     reference_price=self._positive_number(payload, "reference_price"),
                     fill_price=self._positive_number(payload, "fill_price"),
                     decision_allowed=self._boolean(payload, "allowed"),
                     decision_code=self._string(payload, "code"),
                     central_decision_type=self._string(payload, "central_decision_type"),
                     central_decision_code=self._string(payload, "central_decision_code"),
+                    reconciliation_disposition=self._string(payload, "disposition"),
                     research_batch_id=self._string(payload, "research_batch_id"),
                     research_manifest_id=self._string(payload, "research_manifest_id"),
                     research_dataset_id=self._string(payload, "research_dataset_id"),

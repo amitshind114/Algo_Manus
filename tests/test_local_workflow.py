@@ -132,7 +132,7 @@ class LocalWorkflowTests(unittest.TestCase):
             self.assertIsNotNone(manifests.get(batch.research_manifest_id))
             self.assertTrue(submission.decision.allowed)
             self.assertEqual(filled.fill_price, 101)
-            self.assertEqual(len(ledger.events_for("local-workflow-paper-order")), 3)
+            self.assertEqual(len(ledger.events_for("local-workflow-paper-order")), 4)
 
 
 if __name__ == "__main__":
