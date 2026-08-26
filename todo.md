@@ -64,4 +64,4 @@
 - [x] Expose display-safe simulator assumptions and scenario outcome evidence through the existing local paper read paths only.
 - [x] Document simulation assumptions, non-claims, exclusion of broker market data/order-book realism, and reconciliation limits.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option F changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option F changes to `main`, then report completion and request the next separate approval.
