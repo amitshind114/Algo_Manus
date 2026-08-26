@@ -13,6 +13,7 @@ import json
 from typing import Mapping, Protocol
 
 from algo_manus.domain.execution import ReconciliationDisposition
+from algo_manus.application.local_event_bus import LocalApplicationEvent, LocalEventBus, LocalEventType
 from algo_manus.domain.instruments import InstrumentStatus
 from algo_manus.domain.paper import (
     LocalLimitFillAssumptions,
@@ -66,12 +67,14 @@ class PaperExecutionService:
         central_policy: CentralRiskPolicy,
         central_engine: CentralRiskEngine | None = None,
         require_promotion_evidence: bool = False,
+        event_bus: LocalEventBus | None = None,
     ) -> None:
         self._policy = policy
         self._ledger = ledger
         self._central_policy = central_policy
         self._central_engine = central_engine or CentralRiskEngine()
         self._require_promotion_evidence = require_promotion_evidence
+        self._event_bus = event_bus
 
     def submit(
         self,
@@ -462,13 +465,26 @@ class PaperExecutionService:
             sort_keys=True,
             separators=(",", ":"),
         )
-        self._ledger.append(
-            PaperEvent(
-                event_id=f"PE-{sha256(canonical.encode()).hexdigest()[:20]}",
-                event_type=event_type,
-                occurred_at=occurred_at,
-                order_id=intent.order_id,
-                instrument_id=intent.instrument_id,
-                payload=canonical,
-            )
+        event = PaperEvent(
+            event_id=f"PE-{sha256(canonical.encode()).hexdigest()[:20]}",
+            event_type=event_type,
+            occurred_at=occurred_at,
+            order_id=intent.order_id,
+            instrument_id=intent.instrument_id,
+            payload=canonical,
         )
+        self._ledger.append(event)
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                LocalApplicationEvent.create(
+                    event_type=LocalEventType.PAPER_LEDGER_EVENT_RETAINED,
+                    occurred_at=event.occurred_at,
+                    correlation_id=event.order_id,
+                    producer="algo_manus.application.paper_execution.PaperExecutionService",
+                    attributes={
+                        "source_evidence_id": event.event_id,
+                        "paper_event_type": event.event_type.value,
+                        "instrument_id": event.instrument_id,
+                    },
+                )
+            )

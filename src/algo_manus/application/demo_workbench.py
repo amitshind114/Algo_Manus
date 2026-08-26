@@ -46,6 +46,7 @@ from algo_manus.application.experiments import (
     ExperimentResultArtifacts,
 )
 from algo_manus.application.leaderboard import LeaderboardService, LeaderboardSort
+from algo_manus.application.local_event_bus import LocalEventBus
 from algo_manus.application.paper_promotion import PaperResearchPromotionService
 from algo_manus.domain.experiment import ExperimentBatch
 from algo_manus.domain.market_data import (
@@ -217,7 +218,8 @@ class FixtureWorkbenchService:
         "FIXTURE:NSE:EQ:EMBER": ("EMBER", "Fixture Ember Consumer"),
     }
 
-    def __init__(self, data_root: Path | None = None) -> None:
+    def __init__(self, data_root: Path | None = None, event_bus: LocalEventBus | None = None) -> None:
+        self._event_bus = event_bus or LocalEventBus()
         if data_root is None:
             self._batches = _MemoryExperimentRepository()
             self._manifests = _MemoryResearchManifestRepository()
@@ -283,6 +285,7 @@ class FixtureWorkbenchService:
             BarBacktestService(),
             self._batches,
             self._manifests,
+            event_bus=self._event_bus,
         ).run(
             request=BatchBacktestRequest(
                 universe_id="fixture-nse-equity-universe",
@@ -298,6 +301,11 @@ class FixtureWorkbenchService:
             created_at=datetime.now(timezone.utc),
             validated_at=datetime(2026, 8, 23, 9, 15, tzinfo=timezone.utc),
         )
+
+    def local_event_bus(self) -> LocalEventBus:
+        """Return the local process bus for application-service composition only."""
+
+        return self._event_bus
 
     def paper_promotion(self, *, batch_id: str, instrument_id: str):
         """Return exact persisted manifest/validation evidence, or ``None`` when absent."""

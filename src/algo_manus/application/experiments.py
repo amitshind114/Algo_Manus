@@ -14,6 +14,7 @@ from algo_manus.application.dataset_validation import (
     ResearchDatasetValidationError,
     ResearchDatasetValidator,
 )
+from algo_manus.application.local_event_bus import LocalApplicationEvent, LocalEventBus, LocalEventType
 from algo_manus.domain.backtest import BacktestResult, BacktestSpec, BacktestTrade
 from algo_manus.domain.experiment import (
     ExperimentBatch,
@@ -149,11 +150,13 @@ class ExperimentBatchService:
         repository: ExperimentBatchRepository,
         manifest_repository: ResearchRunManifestRepository,
         validator: ResearchDatasetValidator | None = None,
+        event_bus: LocalEventBus | None = None,
     ) -> None:
         self._backtester = backtester
         self._repository = repository
         self._manifest_repository = manifest_repository
         self._validator = validator or ResearchDatasetValidator()
+        self._event_bus = event_bus
 
     def run(
         self,
@@ -227,6 +230,21 @@ class ExperimentBatchService:
             research_manifest_id=manifest.manifest_id,
         )
         self._repository.save(batch)
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                LocalApplicationEvent.create(
+                    event_type=LocalEventType.RESEARCH_BATCH_RETAINED,
+                    occurred_at=batch.created_at,
+                    correlation_id=batch.batch_id,
+                    producer="algo_manus.application.experiments.ExperimentBatchService",
+                    attributes={
+                        "source_evidence_id": manifest.manifest_id,
+                        "batch_id": batch.batch_id,
+                        "manifest_id": manifest.manifest_id,
+                        "result_count": len(batch.results),
+                    },
+                )
+            )
         return batch
 
     @staticmethod

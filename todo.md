@@ -65,3 +65,14 @@
 - [x] Document simulation assumptions, non-claims, exclusion of broker market data/order-book realism, and reconciliation limits.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option F changes to `main`, then report completion and request the next separate approval.
+
+## Option G — local event-bus boundary and event wiring audit
+
+- [x] Audit existing research and paper direct service flows, durable evidence stores and UI composition points for safe event publication seams.
+- [x] Define immutable local event envelopes, event types, dispatch policy, subscriber isolation, ordering, failure and retention semantics without external queue or background processing.
+- [x] Add failing deterministic acceptance tests for publication order, subscriber isolation, duplicate safety, durable audit records, restart boundary and prohibited external capability absence.
+- [x] Implement the in-process local event bus and wire bounded research/paper lifecycle publication through application services only.
+- [x] Expose a display-safe, read-only local event-wiring audit through the workbench without making any operation actionable.
+- [x] Document the in-process boundary, non-durable/restart behavior, explicit local-only limits and evolution path to a future external event infrastructure only if approved.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option G changes to `main`, then report completion and request the next separate approval.

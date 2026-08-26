@@ -36,8 +36,11 @@ def run_workbench(st) -> None:
     import pandas as pd
 
     from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
+    from algo_manus.application.local_event_bus import LocalEventBus
     _style(st)
-    service = FixtureWorkbenchService(_local_data_root())
+    if "local_event_bus" not in st.session_state:
+        st.session_state["local_event_bus"] = LocalEventBus()
+    service = FixtureWorkbenchService(_local_data_root(), event_bus=st.session_state["local_event_bus"])
     public_instrument_source = _local_public_instrument_source()
     historical_candle_source, angel_session = _local_authenticated_historical_source(st)
     retained_dataset_backtests = _local_retained_dataset_backtests()
@@ -1213,6 +1216,7 @@ def _local_evidence_export(st, service, batch, pd) -> None:
 
 
 def _paper(st, by_id, pd, service, control_service, ledger) -> None:
+    from algo_manus.application.local_event_audit import LocalEventWiringAuditReadService
     from algo_manus.application.paper_audit import PaperOperationAuditTimelineReadService
     from algo_manus.application.paper_execution import PaperExecutionService
     from algo_manus.application.paper_projection import PaperOperationsReadService
@@ -1316,6 +1320,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                 ledger,
                 snapshot.policy,
                 require_promotion_evidence=True,
+                event_bus=service.local_event_bus(),
             )
             submission = execution.submit(
                 intent=intent,
@@ -1450,6 +1455,47 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                 for event in events
             ])
             st.dataframe(frame.iloc[::-1], width="stretch", hide_index=True)
+            with st.expander("Read-only local event-wiring audit", expanded=False):
+                event_audit = LocalEventWiringAuditReadService(service.local_event_bus())
+                event_snapshot = event_audit.snapshot()
+                st.caption(
+                    "Current-process publication trace only. Each row points to already-retained research or paper evidence; "
+                    "it cannot publish, subscribe, replay, repair, synchronize or act on any event."
+                )
+                wiring_tiles = st.columns(4)
+                wiring_tiles[0].metric("Durable event bus", "NO")
+                wiring_tiles[1].metric("Retained process events", event_snapshot.retained_event_count)
+                wiring_tiles[2].metric("Retained delivery rows", event_snapshot.retained_delivery_count)
+                wiring_tiles[3].metric("Local subscribers", len(event_snapshot.subscriber_names))
+                st.caption(
+                    f"The trace is bounded to {event_snapshot.maximum_retained_events:,} events and is empty after process restart. "
+                    "Source research manifests and paper-ledger events remain their own durable evidence."
+                )
+                wiring_rows = event_audit.rows()
+                if wiring_rows:
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Time": item.occurred_at,
+                                    "Local event": item.event_type,
+                                    "Correlation": item.correlation_id,
+                                    "Source evidence": item.source_evidence_id or "—",
+                                    "Producer": item.producer,
+                                    "Delivered subscribers": item.delivered_subscriber_count,
+                                    "Failed subscribers": item.failed_subscriber_count,
+                                }
+                                for item in wiring_rows
+                            ]
+                        ).iloc[::-1],
+                        width="stretch",
+                        hide_index=True,
+                    )
+                else:
+                    st.info(
+                        "No current-process local wiring events are retained. Existing durable research and paper evidence "
+                        "is intentionally not replayed into this in-memory trace."
+                    )
             with st.expander("Read-only local paper-operation audit timeline", expanded=False):
                 st.caption("Chronological retained local paper-event evidence only. It cannot submit, cancel, reconcile, amend, sync or route any order, and it is not broker confirmation.")
                 all_audit_rows = paper_audit.rows()
