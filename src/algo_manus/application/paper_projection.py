@@ -107,6 +107,12 @@ class PaperPortfolioProjector:
                     continue
                 order.status = next_status
                 continue
+            if event.event_type is PaperEventType.ORDER_UNFILLED:
+                if not self._matching_optional_terms(order, payload) or not self._valid_no_fill_evidence(payload):
+                    self._invalid(event.event_id, unprojectable)
+                    continue
+                order.status = next_status
+                continue
             if event.event_type in {PaperEventType.ORDER_REJECTED, PaperEventType.ORDER_CANCELLED}:
                 if not self._matching_optional_terms(order, payload):
                     self._invalid(event.event_id, unprojectable)
@@ -250,6 +256,17 @@ class PaperPortfolioProjector:
         if quantity is not None and order.quantity is not None and quantity != order.quantity:
             return False
         return True
+
+    @staticmethod
+    def _valid_no_fill_evidence(payload: dict[str, object]) -> bool:
+        simulation = payload.get("simulation")
+        if not isinstance(simulation, dict):
+            return False
+        if simulation.get("outcome") != "NO_FILL" or simulation.get("order_type") != "LIMIT":
+            return False
+        if not isinstance(simulation.get("reason_code"), str) or not simulation["reason_code"].strip():
+            return False
+        return simulation.get("local_only") is True
 
     @staticmethod
     def _payload(event: PaperEvent, unprojectable: list[str]) -> dict[str, object] | None:

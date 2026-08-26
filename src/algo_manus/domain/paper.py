@@ -31,11 +31,80 @@ class PaperEventType(StrEnum):
     ORDER_ACCEPTED = "ORDER_ACCEPTED"
     ORDER_SUBMITTED = "ORDER_SUBMITTED"  # Legacy retained-event compatibility only.
     ORDER_WORKING = "ORDER_WORKING"
+    ORDER_UNFILLED = "ORDER_UNFILLED"
     ORDER_PARTIALLY_FILLED = "ORDER_PARTIALLY_FILLED"
     ORDER_REJECTED = "ORDER_REJECTED"
     ORDER_FILLED = "ORDER_FILLED"
     ORDER_CANCELLED = "ORDER_CANCELLED"
     RECONCILIATION_RECORDED = "RECONCILIATION_RECORDED"
+
+
+class LocalOrderType(StrEnum):
+    """Order-type assumption accepted by the local simulator, never a broker instruction."""
+
+    LIMIT = "LIMIT"
+    MARKET = "MARKET"
+
+
+class PaperFillSimulationOutcome(StrEnum):
+    """One local simulation decision; it is not a market or broker outcome."""
+
+    NO_FILL = "NO_FILL"
+    PARTIAL_FILL = "PARTIAL_FILL"
+    FILLED = "FILLED"
+
+
+@dataclass(frozen=True, slots=True)
+class LocalLimitFillAssumptions:
+    """Explicit inputs to the deterministic local paper fill model.
+
+    The values are caller-supplied simulation assumptions.  They never represent a
+    broker quote, traded volume, order-book queue, venue report or live market feed.
+    """
+
+    order_type: LocalOrderType
+    limit_price: float
+    observed_price: float
+    available_quantity: int
+    adverse_slippage_bps: float
+    session_open: bool
+    model_version: str
+
+    def __post_init__(self) -> None:
+        if self.limit_price <= 0 or self.observed_price <= 0:
+            raise ValueError("local limit and observed simulation prices must be positive")
+        if self.available_quantity < 0:
+            raise ValueError("local simulated available quantity cannot be negative")
+        if self.adverse_slippage_bps < 0:
+            raise ValueError("local simulated adverse slippage cannot be negative")
+        if not self.model_version.strip():
+            raise ValueError("local simulator model version is required")
+
+    def effective_fill_price(self, side: OrderSide) -> float:
+        """Apply explicitly adverse local slippage to the caller-supplied mark."""
+
+        multiplier = self.adverse_slippage_bps / 10_000
+        return round(self.observed_price * (1 + multiplier if side is OrderSide.BUY else 1 - multiplier), 10)
+
+    def is_limit_eligible(self, side: OrderSide) -> bool:
+        price = self.effective_fill_price(side)
+        return price <= self.limit_price if side is OrderSide.BUY else price >= self.limit_price
+
+    def event_payload(self, *, outcome: PaperFillSimulationOutcome, reason_code: str) -> dict[str, object]:
+        """Return self-describing local-only simulation evidence for one event."""
+
+        return {
+            "model_version": self.model_version,
+            "order_type": self.order_type.value,
+            "limit_price": self.limit_price,
+            "observed_price": self.observed_price,
+            "available_quantity": self.available_quantity,
+            "adverse_slippage_bps": self.adverse_slippage_bps,
+            "session_open": self.session_open,
+            "outcome": outcome.value,
+            "reason_code": reason_code,
+            "local_only": True,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,13 +133,16 @@ class PaperOrderLifecycle:
         (PaperOrderStatus.RISK_APPROVED, PaperEventType.ORDER_ACCEPTED): PaperOrderStatus.ACCEPTED,
         (PaperOrderStatus.RISK_APPROVED, PaperEventType.ORDER_SUBMITTED): PaperOrderStatus.ACCEPTED,
         (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_WORKING): PaperOrderStatus.WORKING,
+        (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_UNFILLED): PaperOrderStatus.ACCEPTED,
         (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_PARTIALLY_FILLED): PaperOrderStatus.PARTIALLY_FILLED,
         (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_FILLED): PaperOrderStatus.FILLED,
         (PaperOrderStatus.ACCEPTED, PaperEventType.ORDER_CANCELLED): PaperOrderStatus.CANCELLED,
         (PaperOrderStatus.WORKING, PaperEventType.ORDER_PARTIALLY_FILLED): PaperOrderStatus.PARTIALLY_FILLED,
+        (PaperOrderStatus.WORKING, PaperEventType.ORDER_UNFILLED): PaperOrderStatus.WORKING,
         (PaperOrderStatus.WORKING, PaperEventType.ORDER_FILLED): PaperOrderStatus.FILLED,
         (PaperOrderStatus.WORKING, PaperEventType.ORDER_CANCELLED): PaperOrderStatus.CANCELLED,
         (PaperOrderStatus.PARTIALLY_FILLED, PaperEventType.ORDER_PARTIALLY_FILLED): PaperOrderStatus.PARTIALLY_FILLED,
+        (PaperOrderStatus.PARTIALLY_FILLED, PaperEventType.ORDER_UNFILLED): PaperOrderStatus.PARTIALLY_FILLED,
         (PaperOrderStatus.PARTIALLY_FILLED, PaperEventType.ORDER_FILLED): PaperOrderStatus.FILLED,
         (PaperOrderStatus.PARTIALLY_FILLED, PaperEventType.ORDER_CANCELLED): PaperOrderStatus.CANCELLED,
         (PaperOrderStatus.REJECTED, PaperEventType.RECONCILIATION_RECORDED): PaperOrderStatus.RECONCILED,
@@ -125,6 +197,16 @@ class PaperSubmission:
     order: PaperOrder
     decision: RiskDecision
     central_decision: RiskEngineDecision | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PaperFillSimulation:
+    """Return value for one deterministic local fill simulation decision."""
+
+    order: PaperOrder
+    outcome: PaperFillSimulationOutcome
+    reason_code: str
+    assumptions: LocalLimitFillAssumptions
 
 
 @dataclass(frozen=True, slots=True)

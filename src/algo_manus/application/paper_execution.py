@@ -15,8 +15,12 @@ from typing import Mapping, Protocol
 from algo_manus.domain.execution import ReconciliationDisposition
 from algo_manus.domain.instruments import InstrumentStatus
 from algo_manus.domain.paper import (
+    LocalLimitFillAssumptions,
+    LocalOrderType,
     PaperEvent,
     PaperEventType,
+    PaperFillSimulation,
+    PaperFillSimulationOutcome,
     PaperOrder,
     PaperOrderLifecycle,
     PaperOrderStatus,
@@ -203,13 +207,105 @@ class PaperExecutionService:
     ) -> PaperOrder:
         """Append one bounded local simulated fill and return its immutable order projection."""
 
+        occurred_at = now or datetime.now(timezone.utc)
+        return self._record_fill(
+            order,
+            fill_price=fill_price,
+            quantity=quantity,
+            occurred_at=occurred_at,
+            simulation_evidence=None,
+        )
+
+    def simulate_limit_fill(
+        self,
+        order: PaperOrder,
+        *,
+        assumptions: LocalLimitFillAssumptions,
+        now: datetime | None = None,
+    ) -> PaperFillSimulation:
+        """Apply declared local limit-fill assumptions without querying any external source.
+
+        This deliberately conservative model uses only the supplied local mark and
+        available quantity.  It makes no claim about queue position, venue matching,
+        traded volume, broker acceptance or paper-market realism.
+        """
+
+        retained = self._require_actionable(order)
+        if assumptions.order_type is not LocalOrderType.LIMIT:
+            raise ValueError("local simulator accepts limit orders only")
+        occurred_at = now or datetime.now(timezone.utc)
+        if not assumptions.session_open:
+            return self._record_no_fill(order, retained, assumptions, "SESSION_CLOSED", occurred_at)
+        if not assumptions.is_limit_eligible(order.intent.side):
+            return self._record_no_fill(order, retained, assumptions, "LIMIT_NOT_ELIGIBLE", occurred_at)
+        if assumptions.available_quantity == 0:
+            return self._record_no_fill(order, retained, assumptions, "NO_AVAILABLE_SIMULATED_VOLUME", occurred_at)
+
+        remaining_quantity = order.intent.quantity - retained.filled_quantity
+        fill_quantity = min(remaining_quantity, assumptions.available_quantity)
+        outcome = (
+            PaperFillSimulationOutcome.FILLED
+            if fill_quantity == remaining_quantity
+            else PaperFillSimulationOutcome.PARTIAL_FILL
+        )
+        reason_code = "FILLED_WITH_EXPLICIT_LOCAL_ASSUMPTIONS" if outcome is PaperFillSimulationOutcome.FILLED else "VOLUME_CAPPED"
+        evidence = assumptions.event_payload(outcome=outcome, reason_code=reason_code)
+        filled = self._record_fill(
+            order,
+            fill_price=assumptions.effective_fill_price(order.intent.side),
+            quantity=fill_quantity,
+            occurred_at=occurred_at,
+            simulation_evidence=evidence,
+        )
+        return PaperFillSimulation(filled, outcome, reason_code, assumptions)
+
+    def _record_no_fill(
+        self,
+        order: PaperOrder,
+        retained: _RetainedPaperState,
+        assumptions: LocalLimitFillAssumptions,
+        reason_code: str,
+        occurred_at: datetime,
+    ) -> PaperFillSimulation:
+        payload = self._lifecycle_terms(order.intent)
+        payload.update(
+            {
+                "cumulative_filled_quantity": retained.filled_quantity,
+                "paper_only": True,
+                "simulation": assumptions.event_payload(
+                    outcome=PaperFillSimulationOutcome.NO_FILL,
+                    reason_code=reason_code,
+                ),
+            }
+        )
+        self._append_event(PaperEventType.ORDER_UNFILLED, order.intent, occurred_at, payload)
+        unchanged = PaperOrder(
+            intent=order.intent,
+            status=retained.status,
+            submitted_at=order.submitted_at,
+            filled_at=retained.filled_at,
+            fill_price=retained.fill_price,
+            filled_quantity=retained.filled_quantity,
+        )
+        return PaperFillSimulation(unchanged, PaperFillSimulationOutcome.NO_FILL, reason_code, assumptions)
+
+    def _record_fill(
+        self,
+        order: PaperOrder,
+        *,
+        fill_price: float,
+        quantity: int | None,
+        occurred_at: datetime,
+        simulation_evidence: Mapping[str, object] | None,
+    ) -> PaperOrder:
+        """Record one bounded fill; simulation evidence is optional for legacy local calls."""
+
         retained = self._require_actionable(order)
         if fill_price <= 0:
             raise ValueError("paper fill price must be positive")
         fill_quantity = order.intent.quantity - retained.filled_quantity if quantity is None else quantity
         if fill_quantity <= 0 or fill_quantity > order.intent.quantity - retained.filled_quantity:
             raise ValueError("paper fill quantity must be positive and no greater than the remaining quantity")
-        occurred_at = now or datetime.now(timezone.utc)
         cumulative_quantity = retained.filled_quantity + fill_quantity
         next_status = PaperOrderStatus.FILLED if cumulative_quantity == order.intent.quantity else PaperOrderStatus.PARTIALLY_FILLED
         event_type = PaperEventType.ORDER_FILLED if next_status is PaperOrderStatus.FILLED else PaperEventType.ORDER_PARTIALLY_FILLED
@@ -222,6 +318,8 @@ class PaperExecutionService:
                 "paper_only": True,
             }
         )
+        if simulation_evidence is not None:
+            payload["simulation"] = dict(simulation_evidence)
         self._append_event(event_type, order.intent, occurred_at, payload)
         return PaperOrder(
             intent=order.intent,

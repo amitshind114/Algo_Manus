@@ -54,3 +54,14 @@
 - [x] Update local documentation with simulation assumptions, event evidence, explicit exclusions and remaining reconciliation limitations.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option E changes to `main`, then report completion and request the next separate build approval.
+
+## Option F — conservative local limit-fill simulator and reconciliation scenarios
+
+- [x] Inspect the Option E event contracts, local execution service, projector and workbench to define a minimal compatible simulator boundary.
+- [x] Define explicit local-only assumptions for limit eligibility, volume-capped partial fills, adverse slippage, no-fill and unsupported market-order rejection.
+- [x] Add failing deterministic acceptance tests for limit eligibility, no-fill, partial/final fills, cancellation, duplicate requests, restart replay and reconciliation evidence.
+- [x] Implement the deterministic simulator through application services only, retaining each simulation decision as immutable local event evidence.
+- [x] Expose display-safe simulator assumptions and scenario outcome evidence through the existing local paper read paths only.
+- [x] Document simulation assumptions, non-claims, exclusion of broker market data/order-book realism, and reconciliation limits.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option F changes to `main`, then report completion and request the next separate approval.

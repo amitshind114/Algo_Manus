@@ -1218,6 +1218,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     from algo_manus.application.paper_projection import PaperOperationsReadService
     from algo_manus.application.paper_risk import PaperPortfolioRiskService
     from algo_manus.domain.instruments import InstrumentStatus
+    from algo_manus.domain.paper import LocalLimitFillAssumptions, LocalOrderType, PaperFillSimulationOutcome
     from algo_manus.domain.risk import DeterministicRiskPolicy, OrderIntent, OrderSide, PaperPortfolioSnapshot, RiskLimits
     from algo_manus.domain.risk_engine import CentralRiskPolicy
 
@@ -1274,7 +1275,25 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         instrument_id = st.selectbox("Instrument", [item.instrument_id for item in batch.results], format_func=lambda item: by_id[item].symbol)
         side = st.selectbox("Side", [OrderSide.BUY, OrderSide.SELL])
         quantity = st.number_input("Fixture quantity", min_value=1, value=10, step=1)
-        mark = st.number_input("Fixture mark", min_value=1.0, value=100.0, step=1.0)
+        mark = st.number_input("Local simulated observed price", min_value=1.0, value=100.0, step=1.0)
+        limit_price = st.number_input("Local simulated limit price", min_value=1.0, value=100.0, step=1.0)
+        simulated_available_quantity = st.number_input(
+            "Local simulated available quantity",
+            min_value=0,
+            value=10,
+            step=1,
+        )
+        adverse_slippage_bps = st.number_input(
+            "Local simulated adverse slippage (bps)",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+        )
+        simulated_session_open = st.toggle("Local simulated session is open", value=True)
+        st.caption(
+            "All fill inputs are explicit local assumptions. They are not broker prices, traded volume, "
+            "order-book depth, queue position, venue confirmation or live market data."
+        )
         promotion = service.paper_promotion(batch_id=batch.batch_id, instrument_id=instrument_id)
         if promotion is None:
             st.error("Paper promotion blocked: the selected experiment/instrument has no persisted accepted research evidence.")
@@ -1316,8 +1335,29 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                 control_snapshot=snapshot,
             )
             if submission.decision.allowed:
-                execution.fill(submission.order, fill_price=mark)
-                st.success("Fixture order accepted and filled in the durable local event ledger.")
+                working = execution.work(submission.order)
+                simulation = execution.simulate_limit_fill(
+                    working,
+                    assumptions=LocalLimitFillAssumptions(
+                        order_type=LocalOrderType.LIMIT,
+                        limit_price=float(limit_price),
+                        observed_price=float(mark),
+                        available_quantity=int(simulated_available_quantity),
+                        adverse_slippage_bps=float(adverse_slippage_bps),
+                        session_open=simulated_session_open,
+                        model_version="local-limit-fill-v1",
+                    ),
+                )
+                if simulation.outcome is PaperFillSimulationOutcome.NO_FILL:
+                    st.info(
+                        "Local simulation retained no-fill evidence: "
+                        f"{simulation.reason_code}. The local order remains actionable; no broker action occurred."
+                    )
+                else:
+                    st.success(
+                        "Local simulation retained "
+                        f"{simulation.outcome.value.lower().replace('_', ' ')} evidence: {simulation.reason_code}."
+                    )
                 st.rerun()
             else:
                 st.error(f"Risk {submission.central_decision.decision_type.lower()} fixture order: {submission.decision.code}")
@@ -1404,6 +1444,8 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                     "Central code": json.loads(event.payload).get("payload", {}).get("central_decision_code"),
                     "Durable kill change": json.loads(event.payload).get("payload", {}).get("kill_switch_change_id"),
                     "Research manifest": json.loads(event.payload).get("payload", {}).get("research_manifest_id"),
+                    "Local simulator outcome": json.loads(event.payload).get("payload", {}).get("simulation", {}).get("outcome"),
+                    "Local simulator reason": json.loads(event.payload).get("payload", {}).get("simulation", {}).get("reason_code"),
                 }
                 for event in events
             ])
@@ -1461,6 +1503,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                             "Risk decisions",
                             "Accepted local proposals",
                             "Working local proposals",
+                            "Unfilled local simulations",
                             "Partial simulated fills",
                             "Fills",
                             "Cancellations",
@@ -1475,6 +1518,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                         "Risk decisions": "RISK_DECISION",
                         "Accepted local proposals": "ORDER_ACCEPTED",
                         "Working local proposals": "ORDER_WORKING",
+                        "Unfilled local simulations": "ORDER_UNFILLED",
                         "Partial simulated fills": "ORDER_PARTIALLY_FILLED",
                         "Fills": "ORDER_FILLED",
                         "Cancellations": "ORDER_CANCELLED",
@@ -1690,6 +1734,13 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                                         "Decision": item.decision_code or "—",
                                         "Central gate": item.central_decision_type or "—",
                                         "Reconciliation evidence": item.reconciliation_disposition or "—",
+                                        "Local simulator outcome": item.simulation_outcome or "—",
+                                        "Local simulator reason": item.simulation_reason_code or "—",
+                                        "Local limit assumption": item.simulation_limit_price if item.simulation_limit_price is not None else "—",
+                                        "Local observed assumption": item.simulation_observed_price if item.simulation_observed_price is not None else "—",
+                                        "Local available quantity": item.simulation_available_quantity if item.simulation_available_quantity is not None else "—",
+                                        "Local adverse slippage (bps)": item.simulation_adverse_slippage_bps if item.simulation_adverse_slippage_bps is not None else "—",
+                                        "Local session assumption": item.simulation_session_open if item.simulation_session_open is not None else "—",
                                         "Research batch": item.research_batch_id or "—",
                                         "Research manifest": item.research_manifest_id or "—",
                                         "Payload valid": item.payload_valid,

@@ -38,6 +38,14 @@ class LocalPaperOperationAuditRow:
     central_decision_type: str | None
     central_decision_code: str | None
     reconciliation_disposition: str | None
+    simulation_model_version: str | None
+    simulation_outcome: str | None
+    simulation_reason_code: str | None
+    simulation_limit_price: float | None
+    simulation_observed_price: float | None
+    simulation_available_quantity: int | None
+    simulation_adverse_slippage_bps: float | None
+    simulation_session_open: bool | None
     research_batch_id: str | None
     research_manifest_id: str | None
     research_dataset_id: str | None
@@ -139,6 +147,14 @@ class PaperOperationAuditTimelineReadService:
                     central_decision_type=self._string(payload, "central_decision_type"),
                     central_decision_code=self._string(payload, "central_decision_code"),
                     reconciliation_disposition=self._string(payload, "disposition"),
+                    simulation_model_version=self._nested_string(payload, "simulation", "model_version"),
+                    simulation_outcome=self._nested_string(payload, "simulation", "outcome"),
+                    simulation_reason_code=self._nested_string(payload, "simulation", "reason_code"),
+                    simulation_limit_price=self._nested_positive_number(payload, "simulation", "limit_price"),
+                    simulation_observed_price=self._nested_positive_number(payload, "simulation", "observed_price"),
+                    simulation_available_quantity=self._nested_nonnegative_int(payload, "simulation", "available_quantity"),
+                    simulation_adverse_slippage_bps=self._nested_nonnegative_number(payload, "simulation", "adverse_slippage_bps"),
+                    simulation_session_open=self._nested_boolean(payload, "simulation", "session_open"),
                     research_batch_id=self._string(payload, "research_batch_id"),
                     research_manifest_id=self._string(payload, "research_manifest_id"),
                     research_dataset_id=self._string(payload, "research_dataset_id"),
@@ -386,6 +402,33 @@ class PaperOperationAuditTimelineReadService:
     def _positive_int(payload: dict[str, object], field: str) -> int | None:
         value = payload.get(field)
         return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+    @staticmethod
+    def _nested(payload: dict[str, object], section: str) -> dict[str, object]:
+        value = payload.get(section)
+        return value if isinstance(value, dict) else {}
+
+    @classmethod
+    def _nested_string(cls, payload: dict[str, object], section: str, field: str) -> str | None:
+        return cls._string(cls._nested(payload, section), field)
+
+    @classmethod
+    def _nested_positive_number(cls, payload: dict[str, object], section: str, field: str) -> float | None:
+        return cls._positive_number(cls._nested(payload, section), field)
+
+    @classmethod
+    def _nested_nonnegative_int(cls, payload: dict[str, object], section: str, field: str) -> int | None:
+        value = cls._nested(payload, section).get(field)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+    @classmethod
+    def _nested_nonnegative_number(cls, payload: dict[str, object], section: str, field: str) -> float | None:
+        value = cls._nested(payload, section).get(field)
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 else None
+
+    @classmethod
+    def _nested_boolean(cls, payload: dict[str, object], section: str, field: str) -> bool | None:
+        return cls._boolean(cls._nested(payload, section), field)
 
     @staticmethod
     def _positive_number(payload: dict[str, object], field: str) -> float | None:
