@@ -95,4 +95,4 @@
 - [x] Expose display-safe local instrument lifecycle, contract metadata and review-status reads through application services in the workbench.
 - [x] Document canonical local instrument metadata, snapshot/review semantics, explicit data freshness limits and no-broker/no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option I changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option I changes to `main`, then report completion and request the next separate approval.
