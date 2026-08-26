@@ -53,4 +53,4 @@
 - [x] Expose display-safe paper-event timeline, projected positions and projected P&L through application-service read paths only.
 - [x] Update local documentation with simulation assumptions, event evidence, explicit exclusions and remaining reconciliation limitations.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option E changes to `main`, then report completion and request the next separate build approval.
+- [x] Commit and push only Option E changes to `main`, then report completion and request the next separate build approval.
