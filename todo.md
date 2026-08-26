@@ -178,4 +178,4 @@
 - [x] Expose a display-safe manifest comparison view in the workbench without promotion, approval, order, paper-run, broker, feed, timed work or execution controls.
 - [x] Document comparison semantics, difference ordering, hash/secret limitations, fixture/manual-declaration limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option Q changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option Q changes to `main`, then report completion and request the next separate approval.
