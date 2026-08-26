@@ -1525,6 +1525,63 @@ def _local_evidence_export(st, service, batch, pd) -> None:
         else:
             st.info("Detailed local evidence export is refused because at least one stored artifact is not integrity-complete. The summary export remains available.")
 
+    with st.expander("Selected retained-evidence manifest", expanded=False):
+        st.caption(
+            "Build a deterministic local manifest from already-retained IDs, policies, timestamps, blockers and hashes. It excludes manual reference contents, notes, source URIs, credentials, tokens, detailed trades and equity. This creates no evidence and changes no research, promotion, risk, paper or execution state."
+        )
+        instrument_id = st.selectbox(
+            "Retained batch instrument for manifest",
+            [item.instrument_id for item in batch.results],
+            format_func=lambda item: item.split(":")[-1],
+            key=f"retained_manifest_instrument_{batch.batch_id}",
+        )
+        matching_paper_evidence = [
+            item
+            for item in service.recent_paper_run_eligibility()
+            if item.batch_id == batch.batch_id and item.instrument_id == instrument_id
+        ]
+        selected_paper_evidence = st.selectbox(
+            "Optional retained paper-run evidence",
+            ["Automatic only when exactly one retained row matches", *[item.evidence_id for item in matching_paper_evidence]],
+            format_func=lambda item: (
+                item
+                if item == "Automatic only when exactly one retained row matches"
+                else next(
+                    f"{evidence.evidence_id} · {evidence.state.value.replace('_', ' ')}"
+                    for evidence in matching_paper_evidence
+                    if evidence.evidence_id == item
+                )
+            ),
+            key=f"retained_manifest_paper_{batch.batch_id}",
+        )
+        manifest = service.retained_evidence_manifest(
+            batch_id=batch.batch_id,
+            instrument_id=instrument_id,
+            paper_run_evidence_id=(
+                None
+                if selected_paper_evidence == "Automatic only when exactly one retained row matches"
+                else selected_paper_evidence
+            ),
+        )
+        st.code(
+            f"{manifest.payload['schema']} v{manifest.payload['schema_version']}\nsha256: {manifest.manifest_sha256}",
+            language="text",
+        )
+        if manifest.payload["conditions"]:
+            st.warning("Manifest conditions: " + ", ".join(manifest.payload["conditions"]))
+        else:
+            st.info("No named manifest conditions. This still does not establish data validity, approval, risk clearance or execution readiness.")
+        st.download_button(
+            "Download selected retained-evidence manifest JSON",
+            data=manifest.json(),
+            file_name=f"{batch.batch_id}_{instrument_id.split(':')[-1]}_retained_evidence_manifest.json",
+            mime="application/json",
+            key=f"retained_manifest_download_{batch.batch_id}",
+        )
+        st.caption(
+            "The SHA-256 covers canonical UTF-8 JSON with sorted keys and compact separators, excluding verification metadata. It is an integrity reference, not a signature, source verification, broker confirmation or authorization."
+        )
+
 
 def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     from algo_manus.application.local_event_audit import LocalEventWiringAuditReadService

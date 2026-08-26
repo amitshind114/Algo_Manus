@@ -159,3 +159,13 @@
 - [x] Document dashboard semantics, counting/freshness limits, fixture/manual-declaration limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option O changes to `main`, then report completion and request the next separate approval.
+
+## Option P — read-only retained-evidence export manifest
+
+- [x] Audit retained experiment artifacts, robustness, paper-run, dataset-review, linkage and export interfaces for a bounded deterministic manifest seam.
+- [x] Define failing deterministic acceptance tests for selected retained evidence, canonical stable serialization/hash, missing/mismatched evidence conditions, secret exclusion, restart-safe reads and no-actionable capability.
+- [x] Implement a local read-only manifest service that assembles selected retained evidence IDs, policies, timestamps, blockers, lineage and content hash without writing, fetching or changing a gate.
+- [x] Expose a display-safe manifest preview and local download in the workbench without promotion, approval, order, paper-run, broker, feed, timed work or execution controls.
+- [x] Document manifest contents, deterministic/hash semantics, secret exclusions, fixture/manual-declaration limitations and strict no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option P changes to `main`, then report completion and request the next separate approval.

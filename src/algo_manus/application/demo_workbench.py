@@ -53,6 +53,10 @@ from algo_manus.application.evidence_coverage_dashboard import (
     EvidenceFreshnessCoveragePolicy,
     LocalEvidenceFreshnessCoverageReadService,
 )
+from algo_manus.application.retained_evidence_manifest import (
+    LocalRetainedEvidenceManifestService,
+    RetainedEvidenceManifest,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -577,6 +581,26 @@ class FixtureWorkbenchService:
                 maximum_evidence_age=timedelta(days=90),
             ),
             evaluated_at=evaluated_at,
+        )
+
+    def retained_evidence_manifest(
+        self,
+        *,
+        batch_id: str,
+        instrument_id: str,
+        paper_run_evidence_id: str | None = None,
+    ) -> RetainedEvidenceManifest:
+        """Build a canonical display/download manifest only; no evidence state is changed."""
+
+        return LocalRetainedEvidenceManifestService(
+            ExperimentEvidenceReadService(self._batches, self._manifests),
+            self._robustness,
+            self._paper_run_eligibility,
+            self._dataset_review,
+        ).build(
+            batch_id=batch_id,
+            instrument_id=instrument_id,
+            paper_run_evidence_id=paper_run_evidence_id,
         )
 
     def recent_experiments(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
