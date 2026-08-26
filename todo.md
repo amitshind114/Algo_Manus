@@ -158,4 +158,4 @@
 - [x] Expose a display-safe evidence freshness and lineage-coverage dashboard in the workbench without approval, promotion, order, paper-run, broker, feed, scheduler or execution controls.
 - [x] Document dashboard semantics, counting/freshness limits, fixture/manual-declaration limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option O changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option O changes to `main`, then report completion and request the next separate approval.
