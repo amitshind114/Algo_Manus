@@ -117,4 +117,4 @@
 - [x] Expose a display-safe robustness-gate summary and evidence rows in the workbench without strategy selection, recommendation, promotion or order controls.
 - [x] Document robustness assumptions, non-claims, overfitting/selection-bias limits, dataset limitations and no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option K changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option K changes to `main`, then report completion and request the next separate approval.
