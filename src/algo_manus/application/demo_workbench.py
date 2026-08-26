@@ -319,11 +319,11 @@ class FixtureWorkbenchService:
         "FIXTURE:NSE:EQ:EMBER": (150, 148, 145, 147, 150, 154, 151, 148, 146, 149, 153, 157, 161, 158, 155),
     }
     _META: Mapping[str, tuple[str, str]] = {
-        "FIXTURE:NSE:EQ:ALPHA": ("ALPHA", "Fixture Alpha Industries"),
-        "FIXTURE:NSE:EQ:BRAVO": ("BRAVO", "Fixture Bravo Systems"),
-        "FIXTURE:NSE:EQ:CEDAR": ("CEDAR", "Fixture Cedar Manufacturing"),
-        "FIXTURE:NSE:EQ:DELTA": ("DELTA", "Fixture Delta Logistics"),
-        "FIXTURE:NSE:EQ:EMBER": ("EMBER", "Fixture Ember Consumer"),
+        "FIXTURE:NSE:EQ:ALPHA": ("ALPHA", "Alpha Industries"),
+        "FIXTURE:NSE:EQ:BRAVO": ("BRAVO", "Bravo Systems"),
+        "FIXTURE:NSE:EQ:CEDAR": ("CEDAR", "Cedar Manufacturing"),
+        "FIXTURE:NSE:EQ:DELTA": ("DELTA", "Delta Logistics"),
+        "FIXTURE:NSE:EQ:EMBER": ("EMBER", "Ember Consumer"),
     }
     def __init__(self, data_root: Path | None = None, event_bus: LocalEventBus | None = None) -> None:
         self._event_bus = event_bus or LocalEventBus()
@@ -348,7 +348,7 @@ class FixtureWorkbenchService:
 
     def instruments(self) -> tuple[FixtureInstrument, ...]:
         return tuple(
-            FixtureInstrument(instrument_id, symbol, name, "NSE Equity fixture")
+            FixtureInstrument(instrument_id, symbol, name, "NSE Equity sample")
             for instrument_id, (symbol, name) in self._META.items()
         )
 

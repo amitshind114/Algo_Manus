@@ -1,12 +1,10 @@
 # India Algo Platform
 
-> **Status: local research and paper foundation.** This repository contains deterministic, fixture-tested local components for India-market research and paper operations. It will not submit live orders until separately defined data, risk, execution, security and operational gates are approved.
+> **Status: local research and paper workbench.** Algo Manus contains deterministic local components for India-market research, retained evidence inspection, and paper operations. Live execution remains unavailable unless separately approved data, risk, execution, security, and operational gates are completed.
 
 ## Product description
 
-India Algo Platform is intended to become an India-first, end-to-end research, analytics and execution-control foundation for **NSE/BSE cash equities** and **NFO listed derivatives**. Its first users are disciplined individual and professional research teams who need transparent research workflows, reproducible backtests, paper trading, observable risk controls and a deliberate path to broker-approved live execution.
-
-The platform is being designed from a static review program covering 58 GitHub repositories and a cross-repository synthesis. The program found reusable ideas in broker abstractions, India-market workflows, research models, risk concepts, paper-trading interfaces and dashboards. It also established that production readiness cannot be achieved by combining open-source bots: data lineage, instrument masters, point-in-time research, reconciliation, security, compliance and controlled execution must be designed as first-class systems.
+Algo Manus is an India-first local research, analytics, evidence, and paper-operations platform for **NSE/BSE cash equities** and **NFO listed derivatives**. It is designed for users who require transparent research workflows, reproducible backtests, bounded paper simulation, observable risk controls, and a deliberate approval path before any future live-execution work.
 
 ## First-release scope
 
@@ -51,27 +49,26 @@ india-algo-platform/
 
 This is an engineering and research repository, not a signal-selling, advisory or portfolio-management product. Before any live pilot, the project must complete a documented review of applicable exchange, broker, data-provider, information-security, privacy and legal requirements. The design will preserve a paper-only default and an explicit “no-live-execution” gate until a controlled pilot is separately approved.
 
-## Current implementation status
+## Current implementation
 
-The repository now includes the high-level [`docs/ROADMAP.md`](docs/ROADMAP.md), detailed ten-phase [`docs/MASTER_DELIVERY_PLAN.md`](docs/MASTER_DELIVERY_PLAN.md) and implemented [`docs/PHASE_1_FOUNDATION.md`](docs/PHASE_1_FOUNDATION.md). The assembled local foundation includes:
+The assembled local platform includes:
 
 | Local capability | Current implementation boundary |
 |---|---|
-| Instrument master and universes | Immutable broker-normalized snapshot contracts, stale/master-change detection and validated selection. |
-| Market data | Source-aware candle contracts, local SQLite datasets and policy rules that block non-broker data in paper/risk contexts. |
-| Research/backtesting | Versioned parameter revisions, an explicit next-bar-fill SMA reference strategy, cost/slippage assumptions and reproducible specifications. |
-| Multi-security comparison | Persisted experiment batches and core-engine KPI leaderboard projections. |
-| Paper operations | Deterministic risk decision, kill-switch rejection, simulated fill state and append-only local event ledger. |
-| Local operations | Optional disabled-by-default Streamlit shell, audit redaction and health projection. |
+| Instruments and datasets | India-first lifecycle contracts, immutable source-aware datasets, validation, local SQLite retention, and explicit stale/change review states. |
+| Research and backtesting | Versioned strategy and parameter revisions, next-bar semantics, declared costs/slippage, reproducible experiment specifications, artifact integrity, and multi-security KPI projections. |
+| Evidence and reporting | Retained research manifests, robustness and dataset-review evidence, paper-run eligibility evidence, cross-evidence linkage, freshness coverage, canonical exports, and read-only manifest comparison. |
+| Paper operations | Deterministic risk decisions, durable kill-switch controls, local limit-fill simulation, append-only event evidence, projections, audit timelines, and operations-console reads. |
+| Workbench | A thin Streamlit research-and-paper interface that invokes application services only and displays retained evidence without direct provider or database calls. |
 
-All current execution paths use fixtures and local SQLite only. The integrated workflow test proves the local contract flow, not provider or strategy performance.
+The workbench uses local sample datasets where retained broker historical datasets are not present. Sample results are clearly labelled in context and are not broker data, live market evidence, performance proof, or recommendations.
 
-## Local MVP workflow and preview
+## Operating guides
 
-The product-facing local research and paper-trading workflow is documented in [`docs/LOCAL_MVP_WORKFLOW.md`](docs/LOCAL_MVP_WORKFLOW.md). The local UI instructions are in [`docs/LOCAL_APP.md`](docs/LOCAL_APP.md), operational controls are in [`docs/LOCAL_OPERATIONS.md`](docs/LOCAL_OPERATIONS.md), current limitations are in [`docs/LOCAL_LIMITATIONS.md`](docs/LOCAL_LIMITATIONS.md), and separately approved next gates are in [`docs/READINESS_GATES.md`](docs/READINESS_GATES.md).
+The current workbench and operating boundaries are documented in [`docs/LOCAL_APP.md`](docs/LOCAL_APP.md), [`docs/LOCAL_LIMITATIONS.md`](docs/LOCAL_LIMITATIONS.md), and [`docs/READINESS_GATES.md`](docs/READINESS_GATES.md). Architecture and service responsibilities are described in [`docs/ARCHITECTURE_PRINCIPLES.md`](docs/ARCHITECTURE_PRINCIPLES.md), while individual evidence, risk, paper, and retained-artifact contracts are documented alongside their corresponding local capabilities in `docs/`.
 
-## Research basis
+## Verification
 
-The roadmap is informed by the completed cumulative workbook at `indian_market_repo_knowledge.xlsx` and the reviewed repository assessments. The source program assessed reuse potential, not strategy profitability, and retained MIT/third-party licence boundaries. No reviewed repository is being adopted wholesale.
+Run `make lint` to compile source and tests, and `make test` for the deterministic test suite.
 
 This is research and analysis only, not personalized financial advice.

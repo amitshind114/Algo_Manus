@@ -179,3 +179,13 @@
 - [x] Document comparison semantics, difference ordering, hash/secret limitations, fixture/manual-declaration limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option Q changes to `main`, then report completion and request the next separate approval.
+
+## Repository cleanup and research-workbench refinement
+
+- [x] Inventory repository files, documentation, developer artifacts and local workbench copy to identify only confirmed obsolete, duplicated, or irrelevant cleanup candidates.
+- [x] Classify each candidate as retain, consolidate, reword, or remove; preserve required architecture, evidence lineage, safety disclosures, test fixtures, interfaces, and service wiring.
+- [x] Remove only confirmed non-required clutter and consolidate any redundant project documentation without deleting current architecture or operation guidance.
+- [x] Refine the local workbench into a cleaner research-oriented presentation, reducing repetitive early-stage terminology while retaining honest sample-data and no-live disclosures at relevant interaction points.
+- [x] Add or adjust deterministic tests where UI/public copy or cleanup can affect contract expectations; do not weaken safety or fixture-honesty coverage.
+- [x] Run lint, full tests, whitespace, repository-reference, secret, prohibited-capability, and fresh-browser checks.
+- [ ] Commit and push only the conservative cleanup changes to `main`, then report the retained/removed/reworded inventory and ask approval before a separate next slice.

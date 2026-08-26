@@ -18,7 +18,6 @@ NAV_ITEMS = (
     ("Strategies", "Strategies"),
     ("Reporting", "Reporting"),
     ("Risk & paper", "Risk & paper"),
-    ("Roadmap", "Roadmap"),
 )
 
 def leaderboard_sort_options() -> dict[str, LeaderboardSort]:
@@ -35,7 +34,7 @@ def leaderboard_sort_options() -> dict[str, LeaderboardSort]:
 def run_workbench(st) -> None:
     import pandas as pd
 
-    from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
+    from algo_manus.application.demo_workbench import FixtureWorkbenchService
     from algo_manus.application.local_event_bus import LocalEventBus
     _style(st)
     if "local_event_bus" not in st.session_state:
@@ -52,9 +51,9 @@ def run_workbench(st) -> None:
 
     with st.sidebar:
         st.markdown("## Algo Manus")
-        st.caption("Local research workbench")
-        st.success("FIXTURE MODE — LOCAL ONLY")
-        st.caption(FIXTURE_MODE_LABEL)
+        st.caption("Research & paper workbench")
+        st.info("LOCAL RESEARCH • PAPER ONLY")
+        st.caption("Sample datasets are active where shown. They are not broker data, live market data, or investment recommendations.")
         st.divider()
         page = _sidebar_navigation(st)
         st.divider()
@@ -96,8 +95,6 @@ def run_workbench(st) -> None:
         _reporting(st, service, pd)
     elif page == "Risk & paper":
         _paper(st, by_id, pd, service, control_service, paper_ledger)
-    else:
-        _roadmap(st, instruments, pd)
 
 
 def _state(st, instrument_ids: tuple[str, ...], persisted_history) -> None:
@@ -109,7 +106,10 @@ def _state(st, instrument_ids: tuple[str, ...], persisted_history) -> None:
         st.session_state["active_batch"] = persisted_history[0] if persisted_history else None
     else:
         st.session_state["active_batch"] = persisted_by_id[active.batch_id]
+    valid_workspaces = {page for _, page in NAV_ITEMS}
     st.session_state.setdefault("workspace", "Overview")
+    if st.session_state.workspace not in valid_workspaces:
+        st.session_state.workspace = "Overview"
 
 
 def _local_risk_controls():
@@ -215,7 +215,6 @@ def _style(st) -> None:
         [data-testid="stSidebar"] .stButton > button[kind="primary"] { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff !important; }
         .kicker { color: #1d4ed8; font-size: .78rem; font-weight: 700; letter-spacing: .10em; }
         .title { font-size: 2.25rem; font-weight: 750; margin: .1rem 0 .25rem; }
-        .fixture { background: #fff7dd; border: 1px solid #f5d689; color: #765700; border-radius: 10px; padding: 11px 14px; margin: 10px 0 20px; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -223,32 +222,27 @@ def _style(st) -> None:
 
 
 def _header(st, title: str, subtitle: str) -> None:
-    st.markdown('<div class="kicker">ALGO MANUS / LOCAL MODE</div>', unsafe_allow_html=True)
+    st.markdown('<div class="kicker">ALGO MANUS / RESEARCH WORKBENCH</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
     st.caption(subtitle)
-    st.markdown(
-        '<div class="fixture"><b>Fixture mode:</b> all displayed results use deterministic local sample bars. '
-        'They are not broker data, real market evidence or a trading recommendation.</div>',
-        unsafe_allow_html=True,
-    )
 
 
 def _overview(st, service, pd) -> None:
-    _header(st, "Research command center", "A functional local workflow before broker data is separately approved.")
+    _header(st, "Research workspace", "Inspect retained research, evidence, and local paper-operation controls from one workspace.")
     batch = st.session_state.active_batch
     metrics = st.columns(4)
-    metrics[0].metric("Universe", "Fixture NSE equity")
+    metrics[0].metric("Universe", "Local sample universe")
     metrics[1].metric("Selected", len(st.session_state.selected_ids))
     metrics[2].metric("Experiments", len(st.session_state.history))
     metrics[3].metric("Paper safety", "Control console")
     left, right = st.columns([1.25, 1])
     with left:
-        st.subheader("Work flow")
-        st.markdown("1. Search and select a local sample universe  \n2. Tune a versioned SMA revision  \n3. Run single or multi-security backtests  \n4. Inspect KPI rows, equity, trades and reports  \n5. Exercise a risk-gated paper event lifecycle")
+        st.subheader("Workflow")
+        st.markdown("1. Select a research universe  \n2. Configure a versioned strategy revision  \n3. Run single- or multi-security backtests  \n4. Inspect retained KPIs, trades, and evidence  \n5. Review local paper-operation controls")
     with right:
         st.subheader("Active experiment")
         if batch is None:
-            st.info("No experiment yet. Open **Research lab** to run the local sample workflow.")
+            st.info("No retained experiment yet. Open **Backtesting** to create a research run.")
         else:
             st.success(batch.batch_id)
             st.caption(f"Strategy: {batch.strategy_id}")
@@ -257,7 +251,7 @@ def _overview(st, service, pd) -> None:
     with st.expander("Local evidence lifecycle", expanded=False):
         lifecycle = service.evidence_lifecycle()
         all_history = service.evidence_health_history()
-        st.caption("Read-only local fixture-store visibility. No cleanup, deletion, compaction, backup or cloud synchronization action is available here.")
+        st.caption("Read-only local-store visibility. No cleanup, deletion, compaction, backup, or cloud synchronization action is available here.")
         if all_history:
             scope_left, scope_right = st.columns(2)
             selected_scope_batch = scope_left.selectbox(
@@ -291,7 +285,7 @@ def _overview(st, service, pd) -> None:
             st.info("No retained local experiment batches are available for lifecycle scope filtering.")
         health = scope.health
         first, second, third = st.columns(3)
-        first.metric("Store", "Local SQLite" if lifecycle.is_persistent else "In-memory fixture")
+        first.metric("Store", "Local SQLite" if lifecycle.is_persistent else "In-memory sample")
         second.metric("Stored batches", lifecycle.batch_count)
         third.metric("Database size", f"{lifecycle.database_size_bytes:,} bytes")
         artifact_left, artifact_middle, artifact_right = st.columns(3)
@@ -302,19 +296,17 @@ def _overview(st, service, pd) -> None:
         health_left.metric("Integrity-complete results", health.complete_count)
         health_middle.metric("Results needing attention", health.non_complete_count)
         health_right.metric("Results checked", health.total_result_count)
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {"Local evidence field": "Equity points", "Value": lifecycle.equity_point_count},
-                    {"Local evidence field": "Oldest batch", "Value": lifecycle.oldest_batch_created_at or "—"},
-                    {"Local evidence field": "Newest batch", "Value": lifecycle.newest_batch_created_at or "—"},
-                    {"Local evidence field": "Equity-point bound per result", "Value": lifecycle.max_equity_points_per_result or "In-memory only"},
-                    {"Local evidence field": "Trade bound per result", "Value": lifecycle.max_trades_per_result or "In-memory only"},
-                ]
-            ),
-            hide_index=True,
-            width="stretch",
+        lifecycle_details = (
+            ("Equity points", str(lifecycle.equity_point_count)),
+            ("Oldest batch", lifecycle.oldest_batch_created_at.isoformat() if lifecycle.oldest_batch_created_at else "—"),
+            ("Newest batch", lifecycle.newest_batch_created_at.isoformat() if lifecycle.newest_batch_created_at else "—"),
+            ("Equity-point bound per result", str(lifecycle.max_equity_points_per_result) if lifecycle.max_equity_points_per_result is not None else "In-memory only"),
+            ("Trade bound per result", str(lifecycle.max_trades_per_result) if lifecycle.max_trades_per_result is not None else "In-memory only"),
         )
+        lifecycle_columns = st.columns(len(lifecycle_details))
+        for column, (label, value) in zip(lifecycle_columns, lifecycle_details):
+            column.caption(label)
+            column.write(value)
         st.dataframe(
             pd.DataFrame(
                 [
@@ -456,7 +448,7 @@ def _overview(st, service, pd) -> None:
                     hide_index=True,
                     width="stretch",
                 )
-        st.caption("Counts describe locally retained fixture evidence only. They do not assess data quality, strategy performance, broker state or backup readiness, and they do not repair any result.")
+        st.caption("Counts describe locally retained sample evidence only. They do not assess data quality, strategy performance, broker state, or backup readiness, and they do not repair any result.")
     st.divider()
     _evidence_freshness_coverage_dashboard(st, service, pd)
 
@@ -591,14 +583,14 @@ def _data_and_instruments(
     st.divider()
     _dataset_review_panel(st, service, instruments, by_id, pd)
     st.divider()
-    st.subheader("Current fixture research universe")
+    st.subheader("Research sample universe")
     table = pd.DataFrame([
-        {"Symbol": item.symbol, "Company": item.display_name, "Segment": item.segment, "Instrument identity": item.instrument_id, "Status": "Fixture active"}
+        {"Symbol": item.symbol, "Company": item.display_name, "Segment": item.segment.replace("fixture", "sample"), "Instrument identity": item.instrument_id, "Status": "Local sample"}
         for item in instruments
     ])
     query, segment = st.columns([2.2, 1])
     term = query.text_input("Search symbol or company", placeholder="ALPHA, BRAVO, INDUSTRIES")
-    selected_segment = segment.selectbox("Segment", ["All", "NSE Equity fixture"])
+    selected_segment = segment.selectbox("Segment", ["All", "NSE Equity sample"])
     filtered = table.copy()
     if term:
         mask = filtered["Symbol"].str.contains(term, case=False, na=False) | filtered["Company"].str.contains(term, case=False, na=False)
@@ -609,7 +601,7 @@ def _data_and_instruments(
     metrics[0].metric("Instruments", len(table))
     metrics[1].metric("Matched", len(filtered))
     metrics[2].metric("Selected", len(st.session_state.selected_ids))
-    metrics[3].metric("Source", "Fixture snapshot")
+    metrics[3].metric("Source", "Local sample snapshot")
     st.dataframe(filtered, hide_index=True, width="stretch", height=260)
     chosen = st.multiselect(
         "Add instruments to the backtest universe",
@@ -618,7 +610,7 @@ def _data_and_instruments(
         format_func=lambda instrument_id: f"{by_id[instrument_id].symbol} — {by_id[instrument_id].display_name}",
     )
     st.session_state.selected_ids = tuple(chosen)
-    st.caption("Fixture research remains separate until an approved historical-data source persists validated datasets. The retained Angel master above does not silently replace this universe.")
+    st.caption("This sample universe remains separate until approved historical data is retained and validated. The retained Angel master above never silently replaces the selected research universe.")
 
 
 def _dataset_review_panel(st, service, instruments, by_id, pd) -> None:
@@ -626,10 +618,10 @@ def _dataset_review_panel(st, service, instruments, by_id, pd) -> None:
 
     st.subheader("Local corporate-action and calendar review evidence")
     st.caption(
-        "Record only a local declaration for one retained fixture dataset window. Source references are never opened, downloaded, verified or synchronized here. A complete review row is not data-quality certification, research promotion, paper approval, order permission or execution authority."
+        "Record only a local declaration for one retained sample-dataset window. Source references are never opened, downloaded, verified, or synchronized here. A complete review row is not data-quality certification, research promotion, paper approval, order permission, or execution authority."
     )
     selected_instrument_id = st.selectbox(
-        "Fixture dataset for declared review",
+        "Sample dataset for declared review",
         [item.instrument_id for item in instruments],
         format_func=lambda item: f"{by_id[item].symbol} — {by_id[item].display_name}",
         key="dataset_review_instrument",
@@ -651,7 +643,7 @@ def _dataset_review_panel(st, service, instruments, by_id, pd) -> None:
         key="dataset_review_note",
     )
     st.caption(
-        "When a reference is supplied, its declared scope is the full currently retained fixture candle window. The workbench does not inspect the reference, infer events, alter candles, or infer adjusted prices."
+        "When a reference is supplied, its declared scope is the full currently retained sample candle window. The workbench does not inspect the reference, infer events, alter candles, or infer adjusted prices."
     )
     if st.button("Record local review evidence", key="record_dataset_review_evidence"):
         evidence = service.record_dataset_review(
@@ -905,7 +897,7 @@ def _historical_candle_panel(
                 height=280,
             )
             st.caption(
-                "Preview is retained research evidence only. It does not replace fixture experiments, establish data quality or enable paper/execution workflows."
+                "Preview is retained research evidence only. It does not replace the selected research experiment, establish data quality, or enable paper/execution workflows."
             )
 
 
@@ -915,7 +907,7 @@ def _research_lab(st, service, instruments, by_id, pd, retained_dataset_backtest
     with controls:
         st.subheader("Backtest controls")
         selected = st.multiselect(
-            "Fixture NSE equity universe",
+            "Local sample NSE equity universe",
             options=[item.instrument_id for item in instruments],
             default=st.session_state.selected_ids,
             format_func=lambda instrument_id: f"{by_id[instrument_id].symbol} — {by_id[instrument_id].display_name}",
@@ -959,7 +951,7 @@ def _research_lab(st, service, instruments, by_id, pd, retained_dataset_backtest
         quantity = st.number_input("Simulated quantity", min_value=1, value=100, step=10)
         commission = st.number_input("Commission (bps)", min_value=0.0, value=10.0, step=1.0)
         slippage = st.number_input("Slippage (bps)", min_value=0.0, value=5.0, step=1.0)
-        run = st.button("Run local experiment", type="primary", disabled=invalid or not selected)
+        run = st.button("Run research experiment", type="primary", disabled=invalid or not selected)
         st.caption(f"{metadata.display_name} uses the same validated parameter revision, costs and data interval for every selected security.")
     with output:
         st.subheader("Backtest result")
@@ -1001,7 +993,7 @@ def _research_lab(st, service, instruments, by_id, pd, retained_dataset_backtest
             try:
                 artifacts = service.experiment_artifacts(batch_id=batch.batch_id, instrument_id=security)
             except (LookupError, ValueError):
-                st.warning("Detailed local artifacts changed while being read and are unavailable for this saved result. KPI summaries remain persisted; no fixture result was recalculated.")
+                st.warning("Detailed local artifacts changed while being read and are unavailable for this saved result. KPI summaries remain persisted; no stored result was recalculated.")
                 artifacts = None
         if artifacts is not None:
             equity = pd.DataFrame(artifacts.equity_curve, columns=["Timestamp", "Equity"])
@@ -1027,7 +1019,7 @@ def _retained_dataset_backtest_panel(st, service, pd, retained_dataset_backtests
     st.subheader("Retained Angel historical-dataset backtest")
     st.caption(
         "This separate research path uses one explicitly selected immutable local Angel historical dataset. "
-        "It does not refresh data, replace fixture experiments, assess data completeness or enable paper/execution workflows."
+        "It does not refresh data, replace selected research experiments, assess data completeness, or enable paper/execution workflows."
     )
     datasets = retained_dataset_backtests.available_datasets(limit=20)
     if not datasets:
@@ -1127,7 +1119,7 @@ def _retained_dataset_backtest_panel(st, service, pd, retained_dataset_backtests
                 )
             )
         except Exception as exc:
-            st.error(f"Retained-dataset research backtest was unavailable; no fixture experiment was changed: {exc}")
+            st.error(f"Retained-dataset research backtest was unavailable; no local research experiment was changed: {exc}")
         else:
             st.session_state.retained_dataset_run = retained_run
             st.success(f"Created immutable research batch {retained_run.batch.batch_id}.")
@@ -1172,11 +1164,11 @@ def _leaderboard(st, service, pd) -> None:
     tiles = st.columns(3)
     tiles[0].metric("Universe size", len(frame))
     tiles[1].metric("Parameter revision", batch.parameter_revision_id[-8:])
-    tiles[2].metric("Dataset basis", "Fixture / 1d")
+    tiles[2].metric("Dataset basis", "Local sample / 1d")
     st.dataframe(frame, width="stretch", hide_index=True, height=330)
     if len(frame) > 1:
         st.bar_chart(frame.set_index("Instrument")[["Net P&L"]], height=260)
-    st.download_button("Download fixture leaderboard CSV", frame.to_csv(index=False), "fixture_leaderboard.csv", "text/csv")
+    st.download_button("Download research leaderboard CSV", frame.to_csv(index=False), "local_research_leaderboard.csv", "text/csv")
     with st.expander("Experiment history"):
         history = pd.DataFrame([
             {"Batch": item.batch_id, "Strategy": item.strategy_id, "Revision": item.parameter_revision_id,
@@ -1185,7 +1177,7 @@ def _leaderboard(st, service, pd) -> None:
         ])
         st.dataframe(history, width="stretch", hide_index=True)
         integrity_rows = _artifact_integrity_rows(service, st.session_state.history)
-        st.caption("Detailed-artifact integrity is local SQLite evidence only. It does not re-run a fixture backtest or validate broker data.")
+        st.caption("Detailed-artifact integrity is local SQLite evidence only. It does not re-run a backtest or validate broker data.")
         filter_options = ["All", "complete", "unavailable", "incomplete", "result_spec_mismatch"]
         selected_status = st.selectbox("Artifact completeness filter", filter_options, key="history_artifact_status")
         if selected_status != "All":
@@ -1229,7 +1221,7 @@ def _strategies(st, service, pd) -> None:
     st.divider()
     st.subheader("Bounded chronological robustness gate")
     st.caption(
-        "A deliberately fixed local research check: SMA crossover only, four declared parameter cells, a 50% chronological in-sample partition, one declared embargo bar and an untouched remaining holdout partition. It uses deterministic fixture bars, not broker or market data."
+        "A deliberately fixed local research check: SMA crossover only, four declared parameter cells, a 50% chronological in-sample partition, one declared embargo bar, and an untouched remaining holdout partition. It uses deterministic sample bars, not broker or market data."
     )
     robustness_left, robustness_middle, robustness_right = st.columns(3)
     robustness_left.metric("Grid", "4 declared cells")
@@ -1249,7 +1241,7 @@ def _strategies(st, service, pd) -> None:
             st.success(f"Retained local robustness evidence: {evidence.evidence_id}")
     robustness_evidence = service.recent_robustness_evidence()
     if not robustness_evidence:
-        st.info("No robustness evidence has been retained. Recording the declared fixture-only check does not create any approval or recommendation.")
+        st.info("No robustness evidence has been retained. Recording the declared sample-data check does not create any approval or recommendation.")
     else:
         summary_rows = [
             {
@@ -1398,7 +1390,7 @@ def _reporting(st, service, pd) -> None:
         st.dataframe(frame, hide_index=True, width="stretch")
     with log:
         if unavailable_details:
-            st.warning("Detailed local trade artifacts are not complete for " + ", ".join(unavailable_details) + ". KPI summaries are still stored; no fixture result was recalculated.")
+            st.warning("Detailed local trade artifacts are not complete for " + ", ".join(unavailable_details) + ". KPI summaries are still stored; no stored result was recalculated.")
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch", height=300)
 
 
@@ -1427,7 +1419,7 @@ def _render_backtest_outcome(st, outcome) -> None:
 def _select_persisted_batch(st, *, key: str):
     history = st.session_state.history
     if not history:
-        st.info("Run a persisted fixture experiment first.")
+        st.info("Run and retain a research experiment first.")
         return None
     active = st.session_state.active_batch
     selected_id = st.selectbox(
@@ -1467,17 +1459,17 @@ def _artifact_integrity_rows(service, batches) -> list[dict[str, object]]:
 
 def _artifact_status_message(status: str) -> str:
     messages = {
-        "unavailable": "Detailed local equity and trade artifacts are unavailable for this saved batch. KPI summaries remain persisted; no fixture result was recalculated.",
-        "incomplete": "Detailed local artifacts are incomplete for this saved batch. KPI summaries remain persisted; no fixture result was recalculated.",
-        "result_spec_mismatch": "Detailed local artifacts do not match the saved result specification. KPI summaries remain persisted; no fixture result was recalculated.",
+        "unavailable": "Detailed local equity and trade artifacts are unavailable for this saved batch. KPI summaries remain persisted; no stored result was recalculated.",
+        "incomplete": "Detailed local artifacts are incomplete for this saved batch. KPI summaries remain persisted; no stored result was recalculated.",
+        "result_spec_mismatch": "Detailed local artifacts do not match the saved result specification. KPI summaries remain persisted; no stored result was recalculated.",
     }
-    return messages.get(status, "Detailed local artifacts cannot be used for this saved batch. KPI summaries remain persisted; no fixture result was recalculated.")
+    return messages.get(status, "Detailed local artifacts cannot be used for this saved batch. KPI summaries remain persisted; no stored result was recalculated.")
 
 
 def _local_evidence_export(st, service, batch, pd) -> None:
     with st.expander("Local evidence export", expanded=False):
         export = service.evidence_export(batch_id=batch.batch_id)
-        st.caption("Fixture-only local evidence export. It is not broker data, market evidence, a performance certificate or an execution record.")
+        st.caption("Local retained-evidence export. It is not broker data, market evidence, a performance certificate, or an execution record.")
         status_frame = pd.DataFrame(
             [
                 {
@@ -1500,7 +1492,7 @@ def _local_evidence_export(st, service, batch, pd) -> None:
         st.download_button(
             "Download local evidence summary JSON",
             data=json.dumps(summary_payload, indent=2, sort_keys=True),
-            file_name=f"{batch.batch_id}_fixture_evidence_summary.json",
+            file_name=f"{batch.batch_id}_local_evidence_summary.json",
             mime="application/json",
         )
         st.caption("Offline local verification (no upload or service call):")
@@ -1519,7 +1511,7 @@ def _local_evidence_export(st, service, batch, pd) -> None:
             st.download_button(
                 "Download integrity-complete local detail JSON",
                 data=json.dumps(detailed_payload, indent=2, sort_keys=True),
-                file_name=f"{batch.batch_id}_fixture_evidence_detail.json",
+                file_name=f"{batch.batch_id}_local_evidence_detail.json",
                 mime="application/json",
             )
         else:
@@ -1653,7 +1645,7 @@ def _local_evidence_export(st, service, batch, pd) -> None:
             )
             st.dataframe(pd.DataFrame(comparison.rows()), hide_index=True, width="stretch")
         st.caption(
-            "The comparison defensively excludes manual reference contents, review notes, source URIs, credentials, tokens, detailed trades and equity curves. It remains fixture/local research context rather than broker, market, performance or execution evidence."
+            "The comparison defensively excludes manual reference contents, review notes, source URIs, credentials, tokens, detailed trades, and equity curves. It remains local research context rather than broker, market, performance, or execution evidence."
         )
 
 
@@ -1669,10 +1661,10 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     from algo_manus.domain.risk import DeterministicRiskPolicy, OrderIntent, OrderSide, PaperPortfolioSnapshot, RiskLimits
     from algo_manus.domain.risk_engine import CentralRiskPolicy
 
-    _header(st, "Risk & paper operations", "Use the local risk policy, emergency kill switch and paper-event ledger with fixture marks only. No broker request or order is made.")
+    _header(st, "Risk & paper operations", "Inspect local risk controls, the durable kill switch, and paper-event evidence with explicit simulated marks. No broker request or order is made.")
     batch = st.session_state.active_batch
     if batch is None:
-        st.info("Run a fixture research experiment before using the paper simulator.")
+        st.info("Run and retain a research experiment before using the paper simulator.")
         return
     fixture_policy = CentralRiskPolicy(
         policy_version="fixture-central-risk-v2",
@@ -1699,7 +1691,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     console_snapshot = paper_console.snapshot(starting_cash=fixture_starting_cash)
     projection = console_snapshot.projection
     control_left, control_right, control_history = st.columns([0.9, 0.9, 1.45])
-    control_left.metric("Active local policy", snapshot.policy.policy_version)
+    control_left.metric("Active local policy", "Deterministic local policy")
     control_right.metric("Durable kill state", "ACTIVE" if snapshot.kill_switch_active else "INACTIVE")
     with control_history:
         with st.expander("Persistent local control history", expanded=False):
@@ -1770,7 +1762,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         )
     change_left, change_right = st.columns([1.1, 0.9])
     with change_left:
-        control_reason = st.text_input("Durable kill-switch change reason", value="local fixture operator action")
+        control_reason = st.text_input("Durable kill-switch change reason", value="local operator action")
     with change_right:
         requested_kill_state = st.toggle("Set durable paper kill state active", value=snapshot.kill_switch_active)
         if st.button("Persist local kill-switch state"):
@@ -1808,7 +1800,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     with left:
         instrument_id = st.selectbox("Instrument", [item.instrument_id for item in batch.results], format_func=lambda item: by_id[item].symbol)
         side = st.selectbox("Side", [OrderSide.BUY, OrderSide.SELL])
-        quantity = st.number_input("Fixture quantity", min_value=1, value=10, step=1)
+        quantity = st.number_input("Simulated quantity", min_value=1, value=10, step=1)
         mark = st.number_input("Local simulated observed price", min_value=1.0, value=100.0, step=1.0)
         limit_price = st.number_input("Local simulated limit price", min_value=1.0, value=100.0, step=1.0)
         simulated_available_quantity = st.number_input(
@@ -1895,11 +1887,11 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                     )
                 st.rerun()
             else:
-                st.error(f"Risk {submission.central_decision.decision_type.lower()} fixture order: {submission.decision.code}")
+                st.error(f"Risk {submission.central_decision.decision_type.lower()} local paper order: {submission.decision.code}")
     with right:
         st.subheader("Durable local paper operations")
         projection_tiles = st.columns(4)
-        projection_tiles[0].metric("Fixture starting cash", f"₹{fixture_starting_cash:,.0f}")
+        projection_tiles[0].metric("Simulated starting cash", f"₹{fixture_starting_cash:,.0f}")
         projection_tiles[1].metric("Projected cash", f"₹{projection.cash:,.2f}")
         projection_tiles[2].metric("Realized P&L", f"₹{projection.realized_pnl:,.2f}")
         projection_tiles[3].metric("Open local positions", len(projection.positions))
@@ -1945,14 +1937,14 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         instrument_limit = snapshot.policy.max_notional_per_instrument or 0
         loss_limit = snapshot.policy.max_realized_loss or 0
         max_instrument_notional = max((notional for _, notional in portfolio_risk.instrument_notionals), default=0.0)
-        risk_tiles[0].metric("Fixture gross exposure", f"₹{portfolio_risk.gross_notional:,.2f}", f"cap ₹{gross_limit:,.0f}")
-        risk_tiles[1].metric("Largest fixture exposure", f"₹{max_instrument_notional:,.2f}", f"cap ₹{instrument_limit:,.0f}")
+        risk_tiles[0].metric("Simulated gross exposure", f"₹{portfolio_risk.gross_notional:,.2f}", f"cap ₹{gross_limit:,.0f}")
+        risk_tiles[1].metric("Largest simulated exposure", f"₹{max_instrument_notional:,.2f}", f"cap ₹{instrument_limit:,.0f}")
         risk_tiles[2].metric("Realized loss used", f"₹{max(0.0, -portfolio_risk.realized_pnl):,.2f}", f"cap ₹{loss_limit:,.0f}")
         risk_tiles[3].metric("Max concentration", f"{snapshot.policy.max_concentration_pct:.0f}%")
-        st.caption("Exposure uses explicit fixture marks: the currently selected mark and average-entry marks for other local holdings. It is not broker valuation or reconciliation.")
+        st.caption("Exposure uses explicit simulated marks: the currently selected mark and average-entry marks for other local holdings. It is not broker valuation or reconciliation.")
         audit_events = console_snapshot.recent_events
         if not audit_events:
-            st.info("No durable fixture paper events yet.")
+            st.info("No durable local paper events yet.")
         else:
             if console_snapshot.latest_risk_decision is not None:
                 evidence = st.columns(3)
@@ -2376,7 +2368,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                 ]
             )
             with st.expander("Replay projection details", expanded=False):
-                st.caption("Derived from the durable local event ledger and the displayed fixture starting cash; it is not broker reconciliation.")
+                st.caption("Derived from the durable local event ledger and the displayed simulated starting cash; it is not broker reconciliation.")
                 st.dataframe(positions, hide_index=True, width="stretch")
                 st.dataframe(
                     pd.DataFrame(
@@ -2391,19 +2383,3 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
                 )
                 if projection.unprojectable_event_ids:
                     st.warning(f"Unprojectable local event IDs: {', '.join(projection.unprojectable_event_ids)}")
-
-
-def _roadmap(st, instruments, pd) -> None:
-    _header(st, "Readiness roadmap", "The workbench stays useful before broker approval because it uses explicit fixture mode, never silent fallback data.")
-    st.dataframe(pd.DataFrame([
-        {"Control": "Instrument master", "Current state": "Fixture sample only", "Real-data gate": "Approved broker master sync"},
-        {"Control": "Research candles", "Current state": "Deterministic local bars", "Real-data gate": "Approved source, freshness and dataset validation"},
-        {"Control": "Paper simulator", "Current state": "Local risk/event exercise", "Real-data gate": "Broker-authoritative marks and reconciled state"},
-        {"Control": "Live execution", "Current state": "Unavailable", "Real-data gate": "Separate controlled pilot approval"},
-    ]), width="stretch", hide_index=True)
-    st.subheader("Current local fixture universe")
-    st.dataframe(pd.DataFrame([
-        {"Symbol": item.symbol, "Name": item.display_name, "Identity": item.instrument_id, "Segment": item.segment}
-        for item in instruments
-    ]), width="stretch", hide_index=True)
-    st.warning("Fixture results are for workflow testing only. They must not be used to decide whether to buy, sell or deploy a strategy.")
