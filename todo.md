@@ -75,4 +75,4 @@
 - [x] Expose a display-safe, read-only local event-wiring audit through the workbench without making any operation actionable.
 - [x] Document the in-process boundary, non-durable/restart behavior, explicit local-only limits and evolution path to a future external event infrastructure only if approved.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option G changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option G changes to `main`, then report completion and request the next separate approval.
