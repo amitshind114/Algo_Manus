@@ -169,3 +169,13 @@
 - [x] Document manifest contents, deterministic/hash semantics, secret exclusions, fixture/manual-declaration limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option P changes to `main`, then report completion and request the next separate approval.
+
+## Option Q — read-only retained-manifest comparison
+
+- [x] Audit the Option P manifest contract, canonical hash, selected-evidence composition and Reporting export seams for a deterministic comparison view.
+- [x] Define failing deterministic acceptance tests for identical manifests, named lineage/policy/parameter/timestamp/blocker/hash differences, secret exclusion, stable ordering and no-actionable capability.
+- [x] Implement a local read-only manifest comparison service that compares two selected retained manifest payloads without writing, merging, ranking, fetching or changing any gate.
+- [x] Expose a display-safe manifest comparison view in the workbench without promotion, approval, order, paper-run, broker, feed, timed work or execution controls.
+- [x] Document comparison semantics, difference ordering, hash/secret limitations, fixture/manual-declaration limitations and strict no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option Q changes to `main`, then report completion and request the next separate approval.

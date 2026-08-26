@@ -1582,6 +1582,80 @@ def _local_evidence_export(st, service, batch, pd) -> None:
             "The SHA-256 covers canonical UTF-8 JSON with sorted keys and compact separators, excluding verification metadata. It is an integrity reference, not a signature, source verification, broker confirmation or authorization."
         )
 
+    with st.expander("Compare two retained-evidence manifests", expanded=False):
+        st.caption(
+            "Read-only identity and difference view over two selected retained manifests. It reports export-safe lineage, policy, parameter, timestamp, blocker and hash differences only. It does not rank, select, merge, approve, promote, create evidence, run paper operations or make an execution decision."
+        )
+        retained_batches = service.recent_experiments()
+        batch_ids = [item.batch_id for item in retained_batches]
+        batches_by_id = {item.batch_id: item for item in retained_batches}
+        automatic = "Automatic only when exactly one retained row matches"
+
+        def comparison_side(column, side: str, default_batch_id: str):
+            selected_batch_id = column.selectbox(
+                f"{side} retained batch",
+                batch_ids,
+                index=batch_ids.index(default_batch_id),
+                key=f"retained_manifest_comparison_{side.lower()}_batch",
+            )
+            selected_batch = batches_by_id[selected_batch_id]
+            selected_instrument_id = column.selectbox(
+                f"{side} retained instrument",
+                [item.instrument_id for item in selected_batch.results],
+                format_func=lambda item: item.split(":")[-1],
+                key=f"retained_manifest_comparison_{side.lower()}_instrument",
+            )
+            matching = [
+                item
+                for item in service.recent_paper_run_eligibility()
+                if item.batch_id == selected_batch_id and item.instrument_id == selected_instrument_id
+            ]
+            selected_paper = column.selectbox(
+                f"{side} optional retained paper-run evidence",
+                [automatic, *[item.evidence_id for item in matching]],
+                format_func=lambda item: (
+                    item
+                    if item == automatic
+                    else next(
+                        f"{evidence.evidence_id} · {evidence.state.value.replace('_', ' ')}"
+                        for evidence in matching
+                        if evidence.evidence_id == item
+                    )
+                ),
+                key=f"retained_manifest_comparison_{side.lower()}_paper",
+            )
+            return (
+                selected_batch_id,
+                selected_instrument_id,
+                None if selected_paper == automatic else selected_paper,
+            )
+
+        left_column, right_column = st.columns(2)
+        left_selection = comparison_side(left_column, "Left", batch.batch_id)
+        right_selection = comparison_side(right_column, "Right", batch.batch_id)
+        comparison = service.retained_evidence_manifest_comparison(
+            left_batch_id=left_selection[0],
+            left_instrument_id=left_selection[1],
+            left_paper_run_evidence_id=left_selection[2],
+            right_batch_id=right_selection[0],
+            right_instrument_id=right_selection[1],
+            right_paper_run_evidence_id=right_selection[2],
+        )
+        st.code(
+            f"left sha256:  {comparison.left_manifest_sha256}\nright sha256: {comparison.right_manifest_sha256}",
+            language="text",
+        )
+        if comparison.equivalent:
+            st.info("IDENTICAL — the selected export-safe manifest payloads and their SHA-256 values match. This is not a validation, recommendation, approval or authorization.")
+        else:
+            st.warning(
+                f"DIFFERENT — {len(comparison.differences)} named export-safe value difference(s) were found. The table is descriptive only and does not state that either selection is better, eligible or actionable."
+            )
+            st.dataframe(pd.DataFrame(comparison.rows()), hide_index=True, width="stretch")
+        st.caption(
+            "The comparison defensively excludes manual reference contents, review notes, source URIs, credentials, tokens, detailed trades and equity curves. It remains fixture/local research context rather than broker, market, performance or execution evidence."
+        )
+
 
 def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     from algo_manus.application.local_event_audit import LocalEventWiringAuditReadService

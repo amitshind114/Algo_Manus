@@ -57,6 +57,10 @@ from algo_manus.application.retained_evidence_manifest import (
     LocalRetainedEvidenceManifestService,
     RetainedEvidenceManifest,
 )
+from algo_manus.application.retained_manifest_comparison import (
+    LocalRetainedManifestComparisonService,
+    RetainedEvidenceManifestComparison,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -602,6 +606,30 @@ class FixtureWorkbenchService:
             instrument_id=instrument_id,
             paper_run_evidence_id=paper_run_evidence_id,
         )
+
+    def retained_evidence_manifest_comparison(
+        self,
+        *,
+        left_batch_id: str,
+        left_instrument_id: str,
+        left_paper_run_evidence_id: str | None,
+        right_batch_id: str,
+        right_instrument_id: str,
+        right_paper_run_evidence_id: str | None,
+    ) -> RetainedEvidenceManifestComparison:
+        """Compare two retained local manifest views only; no evidence or workflow is changed."""
+
+        left = self.retained_evidence_manifest(
+            batch_id=left_batch_id,
+            instrument_id=left_instrument_id,
+            paper_run_evidence_id=left_paper_run_evidence_id,
+        )
+        right = self.retained_evidence_manifest(
+            batch_id=right_batch_id,
+            instrument_id=right_instrument_id,
+            paper_run_evidence_id=right_paper_run_evidence_id,
+        )
+        return LocalRetainedManifestComparisonService().compare(left=left, right=right)
 
     def recent_experiments(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
         """Return local persisted fixture batches newest-first for restart-safe workbench history."""

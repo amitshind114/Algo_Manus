@@ -108,6 +108,33 @@ class RetainedEvidenceManifestTests(unittest.TestCase):
         self.assertIn("BATCH_INSTRUMENT_EVIDENCE_MISSING", unknown_instrument.payload["conditions"])
         self.assertIsNone(unknown_instrument.payload["selected_evidence"]["result"])
 
+    def test_workbench_compares_retained_manifest_views_without_substitution_or_authority(self) -> None:
+        with TemporaryDirectory() as directory:
+            workbench = FixtureWorkbenchService(data_root=Path(directory))
+            batch = self._batch(workbench)
+            same = workbench.retained_evidence_manifest_comparison(
+                left_batch_id=batch.batch_id,
+                left_instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                left_paper_run_evidence_id=None,
+                right_batch_id=batch.batch_id,
+                right_instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                right_paper_run_evidence_id=None,
+            )
+            changed = workbench.retained_evidence_manifest_comparison(
+                left_batch_id=batch.batch_id,
+                left_instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                left_paper_run_evidence_id=None,
+                right_batch_id=batch.batch_id,
+                right_instrument_id="FIXTURE:NSE:EQ:UNKNOWN",
+                right_paper_run_evidence_id=None,
+            )
+
+        self.assertTrue(same.equivalent)
+        self.assertEqual(same.differences, ())
+        self.assertFalse(changed.equivalent)
+        self.assertIn("conditions[0]", {item.path for item in changed.differences})
+        self.assertFalse(hasattr(workbench, "approve_retained_evidence_manifest_comparison"))
+
 
 if __name__ == "__main__":
     unittest.main()
