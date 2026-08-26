@@ -128,4 +128,4 @@
 - [x] Expose a display-safe eligibility/evidence view in the workbench without any approval, promotion, order or paper-run control.
 - [x] Document eligibility semantics, blocking-reason interpretation, evidence limitations, fixture distinction and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option L changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option L changes to `main`, then report completion and request the next separate approval.
