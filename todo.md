@@ -76,3 +76,13 @@
 - [x] Document the in-process boundary, non-durable/restart behavior, explicit local-only limits and evolution path to a future external event infrastructure only if approved.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option G changes to `main`, then report completion and request the next separate approval.
+
+## Option H — event-derived local paper-operations console
+
+- [x] Audit existing paper projection, audit, risk and wiring read services and define one display-safe operations-console contract.
+- [x] Add failing deterministic tests for lifecycle/risk/simulator/reconciliation/wiring aggregation, empty evidence, malformed-event isolation and no-actionable capability.
+- [x] Implement an application read model derived only from immutable local evidence and bounded current-process wiring diagnostics.
+- [x] Expose the local operations console through the existing Risk & paper workbench without direct ledger, provider or broker calls.
+- [x] Document local-only console semantics, evidence scope, no-live exclusions and restart limitations for in-process diagnostics.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option H changes to `main`, then report completion and request the next separate approval.

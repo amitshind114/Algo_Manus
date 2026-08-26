@@ -1219,7 +1219,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     from algo_manus.application.local_event_audit import LocalEventWiringAuditReadService
     from algo_manus.application.paper_audit import PaperOperationAuditTimelineReadService
     from algo_manus.application.paper_execution import PaperExecutionService
-    from algo_manus.application.paper_projection import PaperOperationsReadService
+    from algo_manus.application.paper_operations_console import LocalPaperOperationsConsoleReadService
     from algo_manus.application.paper_risk import PaperPortfolioRiskService
     from algo_manus.domain.instruments import InstrumentStatus
     from algo_manus.domain.paper import LocalLimitFillAssumptions, LocalOrderType, PaperFillSimulationOutcome
@@ -1245,10 +1245,11 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         fixture_policy,
         initial_kill_reason="initialized by local fixture workbench",
     )
-    paper_operations = PaperOperationsReadService(ledger)
     paper_audit = PaperOperationAuditTimelineReadService(ledger)
     fixture_starting_cash = 100_000.0
-    projection = paper_operations.portfolio(starting_cash=fixture_starting_cash)
+    paper_console = LocalPaperOperationsConsoleReadService(ledger, service.local_event_bus())
+    console_snapshot = paper_console.snapshot(starting_cash=fixture_starting_cash)
+    projection = console_snapshot.projection
     control_left, control_right, control_history = st.columns([0.9, 0.9, 1.45])
     control_left.metric("Active local policy", snapshot.policy.policy_version)
     control_right.metric("Durable kill state", "ACTIVE" if snapshot.kill_switch_active else "INACTIVE")
@@ -1274,6 +1275,34 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         if st.button("Persist local kill-switch state"):
             control_service.set_kill_switch(active=requested_kill_state, reason=control_reason)
             st.rerun()
+    with st.expander("Event-derived local operations console", expanded=True):
+        st.caption(
+            "Consolidated local evidence only: immutable paper-event replay, deterministic risk decisions, "
+            "local simulator outcomes, reconciliation evidence and bounded current-process wiring diagnostics. "
+            "It cannot submit, cancel, fill, reconcile, publish, subscribe, synchronize or route an order."
+        )
+        console_tiles = st.columns(5)
+        console_tiles[0].metric("Retained local events", console_snapshot.integrity.total_events)
+        console_tiles[1].metric("Valid interpretations", console_snapshot.integrity.valid_events)
+        console_tiles[2].metric("Integrity issues", console_snapshot.integrity.total_events - console_snapshot.integrity.valid_events)
+        console_tiles[3].metric("Projected local orders", len(console_snapshot.projection.orders))
+        console_tiles[4].metric("Open local positions", len(console_snapshot.projection.positions))
+        latest_risk = console_snapshot.latest_risk_decision
+        local_risk_label = "ALLOW" if latest_risk is not None and latest_risk.allowed else "DENY" if latest_risk is not None else "NO RETAINED DECISION"
+        central_risk_label = (
+            f"central {latest_risk.central_decision_type or '—'} · {latest_risk.central_decision_code or '—'}"
+            if latest_risk is not None
+            else "—"
+        )
+        console_risk, console_lifecycle, console_simulator, console_reconciliation, console_wiring = st.columns(5)
+        console_risk.metric("Latest local paper decision", local_risk_label, central_risk_label)
+        console_lifecycle.metric("Lifecycle states", ", ".join(f"{key}:{value}" for key, value in console_snapshot.lifecycle_counts.items()) or "—")
+        console_simulator.metric("Local simulator evidence", ", ".join(f"{key}:{value}" for key, value in console_snapshot.simulator_outcome_counts.items()) or "—")
+        console_reconciliation.metric("Reconciliation evidence", ", ".join(f"{key}:{value}" for key, value in console_snapshot.reconciliation_counts.items()) or "—")
+        console_wiring.metric("Current-process wiring", console_snapshot.wiring.retained_event_count, "non-durable")
+        st.caption(
+            "Wiring diagnostics are bounded to the current process and empty after restart. Durable paper and research evidence remains in its local SQLite store; no broker, venue, account or live state is displayed."
+        )
     left, right = st.columns([0.9, 1.45])
     with left:
         instrument_id = st.selectbox("Instrument", [item.instrument_id for item in batch.results], format_func=lambda item: by_id[item].symbol)
@@ -1310,7 +1339,7 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
     if submit:
         with left:
             intent = OrderIntent(
-                order_id=f"fixture-paper-{len(paper_operations.events()) + 1}", instrument_id=instrument_id,
+                order_id=f"fixture-paper-{len(console_snapshot.recent_events) + 1}", instrument_id=instrument_id,
                 side=side, quantity=quantity, reference_price=mark, strategy_revision_id=batch.parameter_revision_id,
             )
             assert promotion is not None
@@ -1420,39 +1449,34 @@ def _paper(st, by_id, pd, service, control_service, ledger) -> None:
         risk_tiles[2].metric("Realized loss used", f"₹{max(0.0, -portfolio_risk.realized_pnl):,.2f}", f"cap ₹{loss_limit:,.0f}")
         risk_tiles[3].metric("Max concentration", f"{snapshot.policy.max_concentration_pct:.0f}%")
         st.caption("Exposure uses explicit fixture marks: the currently selected mark and average-entry marks for other local holdings. It is not broker valuation or reconciliation.")
-        events = paper_operations.events()
-        if not events:
+        audit_events = console_snapshot.recent_events
+        if not audit_events:
             st.info("No durable fixture paper events yet.")
         else:
-            latest_risk_event = next(
-                (event for event in reversed(events) if event.event_type.value == "RISK_DECISION"),
-                None,
-            )
-            if latest_risk_event is not None:
-                risk_evidence = json.loads(latest_risk_event.payload).get("payload", {})
+            if console_snapshot.latest_risk_decision is not None:
                 evidence = st.columns(3)
-                evidence[0].metric("Latest central gate", risk_evidence.get("central_decision_type", "—"))
-                evidence[1].metric("Central decision code", risk_evidence.get("central_decision_code", "—"))
-                evidence[2].metric("Durable control", "ACTIVE" if risk_evidence.get("durable_kill_switch_active") else "INACTIVE")
+                evidence[0].metric("Latest central gate", console_snapshot.latest_risk_decision.central_decision_type or "—")
+                evidence[1].metric("Central decision code", console_snapshot.latest_risk_decision.central_decision_code or "—")
+                evidence[2].metric("Local risk decision", "ALLOW" if console_snapshot.latest_risk_decision.allowed else "DENY")
                 st.caption(
-                    f"Policy {risk_evidence.get('central_policy_version', '—')} · "
-                    f"Kill change {risk_evidence.get('kill_switch_change_id', '—')}"
+                    "This is the most recent interpretable retained local risk-decision event; it is not a broker, venue or account control result."
                 )
             frame = pd.DataFrame([
                 {
                     "Time": event.occurred_at,
                     "Event": event.event_type,
+                    "Lifecycle": event.lifecycle_state,
                     "Order": event.order_id,
                     "Instrument": by_id.get(event.instrument_id, event.instrument_id).symbol if event.instrument_id in by_id else event.instrument_id,
-                    "Central policy": json.loads(event.payload).get("payload", {}).get("central_policy_version"),
-                    "Central decision": json.loads(event.payload).get("payload", {}).get("central_decision_type"),
-                    "Central code": json.loads(event.payload).get("payload", {}).get("central_decision_code"),
-                    "Durable kill change": json.loads(event.payload).get("payload", {}).get("kill_switch_change_id"),
-                    "Research manifest": json.loads(event.payload).get("payload", {}).get("research_manifest_id"),
-                    "Local simulator outcome": json.loads(event.payload).get("payload", {}).get("simulation", {}).get("outcome"),
-                    "Local simulator reason": json.loads(event.payload).get("payload", {}).get("simulation", {}).get("reason_code"),
+                    "Integrity": event.integrity_status,
+                    "Central decision": event.central_decision_type,
+                    "Central code": event.central_decision_code,
+                    "Research manifest": event.research_manifest_id,
+                    "Local simulator outcome": event.simulation_outcome,
+                    "Local simulator reason": event.simulation_reason_code,
+                    "Reconciliation": event.reconciliation_disposition,
                 }
-                for event in events
+                for event in audit_events
             ])
             st.dataframe(frame.iloc[::-1], width="stretch", hide_index=True)
             with st.expander("Read-only local event-wiring audit", expanded=False):
