@@ -148,4 +148,4 @@
 - [x] Expose a display-safe cross-evidence linkage view in the workbench without approval, promotion, order, paper-run, broker, feed, scheduler or execution controls.
 - [x] Document linkage semantics, named mismatch conditions, fixture/manual-declaration limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option N changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option N changes to `main`, then report completion and request the next separate approval.
