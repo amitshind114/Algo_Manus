@@ -188,4 +188,4 @@
 - [x] Refine the local workbench into a cleaner research-oriented presentation, reducing repetitive early-stage terminology while retaining honest sample-data and no-live disclosures at relevant interaction points.
 - [x] Add or adjust deterministic tests where UI/public copy or cleanup can affect contract expectations; do not weaken safety or fixture-honesty coverage.
 - [x] Run lint, full tests, whitespace, repository-reference, secret, prohibited-capability, and fresh-browser checks.
-- [ ] Commit and push only the conservative cleanup changes to `main`, then report the retained/removed/reworded inventory and ask approval before a separate next slice.
+- [x] Commit and push only the conservative cleanup changes to `main`, then report the retained/removed/reworded inventory and ask approval before a separate next slice.
