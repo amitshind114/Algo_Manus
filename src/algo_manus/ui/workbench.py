@@ -1067,6 +1067,63 @@ def _strategies(st, service, pd) -> None:
         st.metric("Available historical experiments", len(st.session_state.history))
         st.caption("No performance scores are invented here. KPI values appear only after an actual local experiment run.")
     st.divider()
+    st.subheader("Bounded chronological robustness gate")
+    st.caption(
+        "A deliberately fixed local research check: SMA crossover only, four declared parameter cells, a 60% chronological in-sample partition, one declared embargo bar and an untouched remaining holdout partition. It uses deterministic fixture bars, not broker or market data."
+    )
+    robustness_left, robustness_middle, robustness_right = st.columns(3)
+    robustness_left.metric("Grid", "4 declared cells")
+    robustness_middle.metric("Split", "60% / 1-bar embargo / holdout")
+    robustness_right.metric("Gate", "Informational only")
+    st.caption(
+        "This control records local research evidence only. It cannot select a candidate, promote a strategy, approve paper activity, submit an order, retrieve broker data or provide a recommendation."
+    )
+    if st.button("Record declared local robustness evidence", key="run_declared_local_robustness"):
+        try:
+            evidence = service.run_local_robustness_evaluation(
+                instrument_id="FIXTURE:NSE:EQ:ALPHA"
+            )
+        except ValueError as exc:
+            st.error(f"Local robustness evidence was not recorded: {exc}")
+        else:
+            st.success(f"Retained local robustness evidence: {evidence.evidence_id}")
+    robustness_evidence = service.recent_robustness_evidence()
+    if not robustness_evidence:
+        st.info("No robustness evidence has been retained. Recording the declared fixture-only check does not create any approval or recommendation.")
+    else:
+        summary_rows = [
+            {
+                "Evidence ID": item.evidence_id,
+                "Dataset": item.dataset_id,
+                "Strategy": f"{item.strategy_id} v{item.strategy_version}",
+                "Policy": item.split_policy.policy_version,
+                "Partition": f"through {item.in_sample_end.date()} / from {item.holdout_start.date()}",
+                "Gate": item.gate_state.value.replace("_", " "),
+                "Candidates": len(item.candidates),
+                "Recorded": item.created_at.isoformat(),
+            }
+            for item in robustness_evidence
+        ]
+        st.dataframe(pd.DataFrame(summary_rows), hide_index=True, width="stretch")
+        latest = robustness_evidence[0]
+        st.warning(latest.selection_bias_warning)
+        candidate_rows = [
+            {
+                "Parameters": ", ".join(f"{name}={value}" for name, value in sorted(candidate.parameters.items())),
+                "Status": candidate.status.replace("_", " "),
+                "In-sample net P&L": candidate.in_sample.net_pnl if candidate.in_sample else "Insufficient history",
+                "In-sample trades": candidate.in_sample.trade_count if candidate.in_sample else "—",
+                "Holdout net P&L": candidate.holdout.net_pnl if candidate.holdout else "Insufficient history",
+                "Holdout trades": candidate.holdout.trade_count if candidate.holdout else "—",
+                "Execution": "Next-bar open only" if candidate.in_sample and candidate.holdout else "Not evaluated",
+            }
+            for candidate in latest.candidates
+        ]
+        st.dataframe(pd.DataFrame(candidate_rows), hide_index=True, width="stretch")
+        st.caption(
+            "Rows are evidence records, not a ranking. No candidate is selected, and every paper activity still requires the separate immutable manifest and deterministic risk gates."
+        )
+    st.divider()
     st.subheader("Retained strategy-family comparison")
     retained_batches = service.recent_experiments()
     if len(retained_batches) < 2:

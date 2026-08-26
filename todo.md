@@ -107,3 +107,14 @@
 - [x] Document strategy assumptions, local simulation limits, no-performance claims, selection bias limits and no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option J changes to `main`, then report completion and request the next separate approval.
+
+## Option K — robustness and research-evidence gate
+
+- [x] Audit current dataset, backtest, experiment, artifact and promotion-evidence contracts for deterministic local robustness evaluation seams.
+- [x] Define failing deterministic acceptance tests for chronological in-sample/holdout partitioning, bounded parameter grids, reproducibility, insufficient-history handling, warnings and no-actionable capability.
+- [x] Implement local-only robustness evaluation with declared split policy, bounded grid validation, next-bar backtests and explicit selection-bias warnings.
+- [x] Retain robustness evidence with immutable local research lineage and expose it through an application read service without changing paper-promotion or risk gates.
+- [x] Expose a display-safe robustness-gate summary and evidence rows in the workbench without strategy selection, recommendation, promotion or order controls.
+- [x] Document robustness assumptions, non-claims, overfitting/selection-bias limits, dataset limitations and no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option K changes to `main`, then report completion and request the next separate approval.

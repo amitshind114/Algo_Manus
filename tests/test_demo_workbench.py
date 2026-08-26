@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+import tempfile
 import unittest
 
 from algo_manus.application.demo_workbench import FIXTURE_MODE_LABEL, FixtureWorkbenchService
@@ -46,6 +48,20 @@ class FixtureWorkbenchTests(unittest.TestCase):
         self.assertEqual(options["Net P&L"], LeaderboardSort.NET_PNL)
         self.assertEqual(options["Return"], LeaderboardSort.TOTAL_RETURN)
         self.assertEqual(options["Drawdown"], LeaderboardSort.MAX_DRAWDOWN)
+
+    def test_workbench_retains_safe_local_robustness_evidence_without_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            service = FixtureWorkbenchService(data_root=Path(directory))
+            evidence = service.run_local_robustness_evaluation(
+                instrument_id="FIXTURE:NSE:EQ:ALPHA"
+            )
+            restarted = FixtureWorkbenchService(data_root=Path(directory))
+
+            recent = restarted.recent_robustness_evidence()
+
+        self.assertEqual(evidence.gate_state.value, "INFORMATIONAL_ONLY")
+        self.assertEqual(recent, (evidence,))
+        self.assertFalse(hasattr(service, "promote_robustness"))
 
 
 if __name__ == "__main__":
