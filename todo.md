@@ -86,3 +86,13 @@
 - [x] Document local-only console semantics, evidence scope, no-live exclusions and restart limitations for in-process diagnostics.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option H changes to `main`, then report completion and request the next separate approval.
+
+## Option I — India-first instrument lifecycle enrichment
+
+- [x] Audit current local instrument contracts, snapshot persistence, availability/review handling and workbench reads for India-market contract metadata seams.
+- [x] Define failing deterministic acceptance tests for exchange/segment/tradingsymbol/expiry/strike/option type/lot/tick/status lifecycle, conflicts, deactivation and review requirements.
+- [x] Implement canonical India-first instrument contract enrichment and local lifecycle/review projections without a new broker endpoint or market-price capability.
+- [x] Expose display-safe local instrument lifecycle, contract metadata and review-status reads through application services in the workbench.
+- [x] Document canonical local instrument metadata, snapshot/review semantics, explicit data freshness limits and no-broker/no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option I changes to `main`, then report completion and request the next separate approval.

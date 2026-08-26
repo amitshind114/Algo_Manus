@@ -467,6 +467,8 @@ def _data_and_instruments(
     historical_candle_source,
     angel_session,
 ) -> None:
+    from algo_manus.application.instrument_lifecycle import InstrumentLifecycleReadService
+
     _header(st, "Data & instruments", "Search the current local universe as you would the future broker-synced instrument master. Manual ticker entry is intentionally not used.")
     source_status = public_instrument_source.status()
     st.subheader("Angel One public instrument master")
@@ -497,19 +499,38 @@ def _data_and_instruments(
         "This action downloads only Angel One’s public ScripMaster JSON into an immutable local SQLite snapshot. "
         "It does not authenticate, access an account, fetch prices, submit paper orders or enable execution."
     )
+    master = public_instrument_source.latest_snapshot()
     angel_preview = public_instrument_source.preview(limit=100)
-    if angel_preview:
-        with st.expander("Retained Angel One snapshot preview", expanded=False):
+    if master is not None:
+        lifecycle = InstrumentLifecycleReadService().project(master)
+        lifecycle_by_id = {item.instrument_id: item for item in lifecycle.instruments}
+        lifecycle_tiles = st.columns(5)
+        lifecycle_tiles[0].metric("Retained records", lifecycle.summary.retained_record_count)
+        lifecycle_tiles[1].metric("Ready", lifecycle.summary.ready_count)
+        lifecycle_tiles[2].metric("Review required", lifecycle.summary.review_required_count)
+        lifecycle_tiles[3].metric("Derivatives", lifecycle.summary.derivative_count)
+        lifecycle_tiles[4].metric("Segments", ", ".join(f"{key}:{value}" for key, value in lifecycle.summary.segment_counts.items()) or "—")
+        with st.expander("India-first retained instrument lifecycle", expanded=False):
+            st.caption(
+                "Canonical retained master metadata only: exchange, segment, tradingsymbol, expiry, strike, option type, lot size, tick size and local review status. "
+                "This view cannot download, synchronize, map, activate, deactivate, retrieve prices, or submit any order."
+            )
             st.dataframe(
                 pd.DataFrame(
                     [
                         {
-                            "Symbol": item.trading_symbol,
-                            "Name": item.display_name,
-                            "Exchange": item.exchange,
-                            "Type": item.instrument_type.value,
-                            "Token": item.broker_token,
-                            "Status": item.status.value,
+                            "Symbol": lifecycle_by_id[item.instrument_id].trading_symbol,
+                            "Exchange": lifecycle_by_id[item.instrument_id].exchange,
+                            "Segment": lifecycle_by_id[item.instrument_id].segment,
+                            "Type": lifecycle_by_id[item.instrument_id].instrument_type,
+                            "Contract": lifecycle_by_id[item.instrument_id].contract_descriptor,
+                            "Expiry": lifecycle_by_id[item.instrument_id].expiry or "—",
+                            "Strike": lifecycle_by_id[item.instrument_id].strike or "—",
+                            "Option": lifecycle_by_id[item.instrument_id].option_type or "—",
+                            "Lot": lifecycle_by_id[item.instrument_id].lot_size or "—",
+                            "Tick": lifecycle_by_id[item.instrument_id].tick_size or "—",
+                            "Lifecycle": lifecycle_by_id[item.instrument_id].lifecycle_state.value,
+                            "Review": lifecycle_by_id[item.instrument_id].review_reason or "—",
                             "Instrument identity": item.instrument_id,
                         }
                         for item in angel_preview
@@ -520,7 +541,7 @@ def _data_and_instruments(
                 height=280,
             )
             st.caption(
-                "Preview is read-only retained broker-master metadata. Historical candles and a broker-backed research universe remain separately gated."
+                "Lifecycle readiness is derived from the current retained snapshot only. A future snapshot comparison will retain missing or contract-changed records for explicit review; it will not auto-remap a symbol, expiry, strike, lot or token. Historical candles and a broker-backed research universe remain separately gated."
             )
     else:
         st.info("No Angel One master is retained locally yet. Download the public master above to create the first immutable snapshot.")
