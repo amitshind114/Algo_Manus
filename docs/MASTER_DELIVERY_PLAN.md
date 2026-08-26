@@ -285,8 +285,8 @@ An approved deployment has named service owners, monitored service-level objecti
 | Release readiness | 8 | Tests, monitoring, backup/restore and incident/rollback procedures are demonstrated |
 | Explicit live authorization | 9 | No live capability activates absent independent documented approval |
 
-## Immediate continuation point
+## Current continuation point
 
-The next implementation session begins with **Phase 1**. The first build ticket should establish the repository’s licence decision, contribution standards, Architecture Decision Record format, domain-package technology choice and CI checks. No broker integration, live market-data call, deployment or execution feature is part of that first ticket.
+The adopted execution sequence is maintained in [the production-blueprint reconciliation](./ADOPTED_PRODUCTION_BLUEPRINT.md). The next proposed contained implementation is **Option E — canonical paper event spine**. It must use the existing local evidence, risk and paper foundations; it must not add a broker call, live market feed, WebSocket, background runner, cloud deployment or live execution capability.
 
 This is research and analysis only, not personalized financial advice.

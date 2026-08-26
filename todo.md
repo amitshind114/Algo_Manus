@@ -34,3 +34,11 @@
 - [x] Update documentation with Option D data provenance, data-quality caveats, fixture distinction and remaining capability gates.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option D changes to `main`, then report completion and request the next separate approval.
+
+## Algo Manus primary-build architecture reconciliation
+
+- [x] Audit the current codebase against the attached production blueprint, identifying implemented foundations, partial components, missing integrations and explicit capability exclusions.
+- [x] Convert the blueprint into a dependency-ordered vertical-slice roadmap for Algo Manus, retaining its local-first research/paper scope and separating any live capability behind later approvals.
+- [x] Define the first auditable end-to-end paper-operation slice from retained data through strategy, deterministic risk decision, event evidence, simulated outcome and reporting.
+- [x] Document the architecture decisions, regulatory assumptions requiring current broker/exchange verification, and a strict no-live-execution gate.
+- [x] Validate the roadmap against existing tests and source boundaries, commit the reconciliation documentation, and request approval for the first implementation slice.
