@@ -37,6 +37,13 @@ from algo_manus.application.evidence_health_comparison import (
     LocalEvidenceHealthComparison,
     LocalEvidenceHealthComparisonReadService,
 )
+from algo_manus.application.dataset_review_gate import (
+    DatasetReviewDeclaration,
+    DatasetReviewDisposition,
+    DatasetReviewEvidence,
+    LocalDatasetReviewGateService,
+    LocalDatasetReviewPolicy,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -261,6 +268,29 @@ class _MemoryPaperRunEligibilityEvidenceRepository:
         )
 
 
+class _MemoryDatasetReviewEvidenceRepository:
+    """Fixture-only local dataset-review evidence for the current process."""
+
+    def __init__(self) -> None:
+        self._evidence: dict[str, DatasetReviewEvidence] = {}
+
+    def save(self, evidence: DatasetReviewEvidence) -> None:
+        existing = self._evidence.get(evidence.evidence_id)
+        if existing is not None and existing != evidence:
+            raise ValueError("immutable dataset review evidence conflicts with existing record")
+        self._evidence.setdefault(evidence.evidence_id, evidence)
+
+    def get(self, evidence_id: str) -> DatasetReviewEvidence | None:
+        return self._evidence.get(evidence_id)
+
+    def list_recent(self, limit: int = 20) -> tuple[DatasetReviewEvidence, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        return tuple(
+            sorted(self._evidence.values(), key=lambda item: (item.evaluated_at, item.evidence_id), reverse=True)[:limit]
+        )
+
+
 class FixtureWorkbenchService:
     """Uses the production application services with deterministic local inputs."""
 
@@ -285,8 +315,10 @@ class FixtureWorkbenchService:
             self._manifests = _MemoryResearchManifestRepository()
             self._robustness = _MemoryRobustnessEvidenceRepository()
             self._paper_run_eligibility = _MemoryPaperRunEligibilityEvidenceRepository()
+            self._dataset_review = _MemoryDatasetReviewEvidenceRepository()
         else:
             from algo_manus.infrastructure.experiments.sqlite_repository import SqliteExperimentBatchRepository
+            from algo_manus.infrastructure.dataset_review.sqlite_repository import SqliteDatasetReviewEvidenceRepository
             from algo_manus.infrastructure.research.sqlite_repository import SqliteResearchEvidenceRepository
             from algo_manus.infrastructure.robustness.sqlite_repository import SqliteRobustnessEvidenceRepository
             from algo_manus.infrastructure.paper_eligibility.sqlite_repository import SqlitePaperRunEligibilityEvidenceRepository
@@ -295,6 +327,7 @@ class FixtureWorkbenchService:
             self._manifests = SqliteResearchEvidenceRepository(data_root / "research_evidence.sqlite3")
             self._robustness = SqliteRobustnessEvidenceRepository(data_root / "robustness_evidence.sqlite3")
             self._paper_run_eligibility = SqlitePaperRunEligibilityEvidenceRepository(data_root / "paper_run_eligibility.sqlite3")
+            self._dataset_review = SqliteDatasetReviewEvidenceRepository(data_root / "dataset_review.sqlite3")
 
     def instruments(self) -> tuple[FixtureInstrument, ...]:
         return tuple(
@@ -464,6 +497,51 @@ class FixtureWorkbenchService:
         """Return immutable local eligibility evidence only; no action is available."""
 
         return self._paper_run_eligibility.list_recent(limit)
+
+    def record_dataset_review(
+        self,
+        *,
+        instrument_id: str,
+        corporate_action_source_reference: str | None,
+        calendar_source_reference: str | None,
+        note: str,
+        reviewed_at: datetime | None = None,
+    ) -> DatasetReviewEvidence:
+        """Retain a declared local review; blank references become explicit blockers.
+
+        Source references are user-supplied declaration metadata. This method does
+        not resolve references, retrieve events, amend data, or authorize a workflow.
+        """
+
+        if instrument_id not in self._SERIES:
+            raise ValueError("selected fixture instrument is unknown")
+        moment = reviewed_at or datetime.now(timezone.utc)
+        dataset = self._dataset(instrument_id)
+
+        def declaration(source_reference: str | None) -> DatasetReviewDeclaration | None:
+            if source_reference is None or not source_reference.strip():
+                return None
+            return DatasetReviewDeclaration(
+                disposition=DatasetReviewDisposition.REVIEWED,
+                scope_start=dataset.candles[0].timestamp,
+                scope_end=dataset.candles[-1].timestamp,
+                source_reference=source_reference.strip(),
+                reviewed_at=moment,
+                note=note.strip() or "local declared review evidence",
+            )
+
+        return LocalDatasetReviewGateService(self._dataset_review).evaluate(
+            dataset=dataset,
+            corporate_action_review=declaration(corporate_action_source_reference),
+            calendar_review=declaration(calendar_source_reference),
+            policy=LocalDatasetReviewPolicy("local-dataset-review-v1", max_review_age=timedelta(days=90)),
+            evaluated_at=moment,
+        )
+
+    def recent_dataset_review_evidence(self, limit: int = 20) -> tuple[DatasetReviewEvidence, ...]:
+        """Read local review evidence only; it cannot approve research, paper, or execution."""
+
+        return self._dataset_review.list_recent(limit)
 
     def recent_experiments(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
         """Return local persisted fixture batches newest-first for restart-safe workbench history."""

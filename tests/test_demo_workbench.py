@@ -63,6 +63,30 @@ class FixtureWorkbenchTests(unittest.TestCase):
         self.assertEqual(recent, (evidence,))
         self.assertFalse(hasattr(service, "promote_robustness"))
 
+    def test_workbench_retains_declared_dataset_review_evidence_without_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = FixtureWorkbenchService(data_root=root)
+            blocked = service.record_dataset_review(
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                corporate_action_source_reference=None,
+                calendar_source_reference=None,
+                note="blank references must remain explicit blockers",
+            )
+            complete = service.record_dataset_review(
+                instrument_id="FIXTURE:NSE:EQ:ALPHA",
+                corporate_action_source_reference="local://manual/corporate-actions/alpha",
+                calendar_source_reference="local://manual/calendar/alpha",
+                note="declared local review; no source resolution or data retrieval",
+            )
+            recent = FixtureWorkbenchService(data_root=root).recent_dataset_review_evidence()
+
+        self.assertEqual(blocked.state.value, "BLOCKED")
+        self.assertIn("CORPORATE_ACTION_REVIEW_MISSING", blocked.blocking_reasons)
+        self.assertEqual(complete.state.value, "REVIEW_COMPLETE")
+        self.assertEqual({item.evidence_id for item in recent}, {blocked.evidence_id, complete.evidence_id})
+        self.assertFalse(hasattr(service, "approve_dataset_review"))
+
 
 if __name__ == "__main__":
     unittest.main()

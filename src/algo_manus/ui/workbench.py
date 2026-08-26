@@ -78,6 +78,7 @@ def run_workbench(st) -> None:
     elif page == "Data & instruments":
         _data_and_instruments(
             st,
+            service,
             instruments,
             by_id,
             pd,
@@ -460,6 +461,7 @@ def _overview(st, service, pd) -> None:
 
 def _data_and_instruments(
     st,
+    service,
     instruments,
     by_id,
     pd,
@@ -548,6 +550,8 @@ def _data_and_instruments(
     st.divider()
     _historical_candle_panel(st, pd, public_instrument_source, historical_candle_source, angel_session)
     st.divider()
+    _dataset_review_panel(st, service, instruments, by_id, pd)
+    st.divider()
     st.subheader("Current fixture research universe")
     table = pd.DataFrame([
         {"Symbol": item.symbol, "Company": item.display_name, "Segment": item.segment, "Instrument identity": item.instrument_id, "Status": "Fixture active"}
@@ -576,6 +580,78 @@ def _data_and_instruments(
     )
     st.session_state.selected_ids = tuple(chosen)
     st.caption("Fixture research remains separate until an approved historical-data source persists validated datasets. The retained Angel master above does not silently replace this universe.")
+
+
+def _dataset_review_panel(st, service, instruments, by_id, pd) -> None:
+    """Render local declared review evidence without fetching, resolving, or approving anything."""
+
+    st.subheader("Local corporate-action and calendar review evidence")
+    st.caption(
+        "Record only a local declaration for one retained fixture dataset window. Source references are never opened, downloaded, verified or synchronized here. A complete review row is not data-quality certification, research promotion, paper approval, order permission or execution authority."
+    )
+    selected_instrument_id = st.selectbox(
+        "Fixture dataset for declared review",
+        [item.instrument_id for item in instruments],
+        format_func=lambda item: f"{by_id[item].symbol} — {by_id[item].display_name}",
+        key="dataset_review_instrument",
+    )
+    review_left, review_right = st.columns(2)
+    corporate_action_reference = review_left.text_input(
+        "Local corporate-action review reference",
+        placeholder="Optional local reference; blank retains a missing-review blocker",
+        key="corporate_action_review_reference",
+    )
+    calendar_reference = review_right.text_input(
+        "Local calendar review reference",
+        placeholder="Optional local reference; blank retains a missing-review blocker",
+        key="calendar_review_reference",
+    )
+    note = st.text_area(
+        "Declared local review note",
+        value="Manual local declaration only; no source lookup, event retrieval or adjustment is performed.",
+        key="dataset_review_note",
+    )
+    st.caption(
+        "When a reference is supplied, its declared scope is the full currently retained fixture candle window. The workbench does not inspect the reference, infer events, alter candles, or infer adjusted prices."
+    )
+    if st.button("Record local review evidence", key="record_dataset_review_evidence"):
+        evidence = service.record_dataset_review(
+            instrument_id=selected_instrument_id,
+            corporate_action_source_reference=corporate_action_reference or None,
+            calendar_source_reference=calendar_reference or None,
+            note=note,
+        )
+        if evidence.blocking_reasons:
+            st.warning("Local review evidence retained with blocker(s): " + ", ".join(evidence.blocking_reasons))
+        else:
+            st.info("Local review evidence retained as a manual declaration only. It does not approve any research, paper or execution workflow.")
+    history = service.recent_dataset_review_evidence()
+    if not history:
+        st.info("No local review evidence has been retained. Blank references intentionally produce explicit missing-review blockers when recorded.")
+        return
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Evidence ID": item.evidence_id,
+                    "State": item.state.value.replace("_", " "),
+                    "Dataset": item.dataset_id,
+                    "Instrument": item.instrument_id,
+                    "Corporate-action reference": item.corporate_action_review.source_reference if item.corporate_action_review else "Missing",
+                    "Calendar reference": item.calendar_review.source_reference if item.calendar_review else "Missing",
+                    "Policy": item.policy_version,
+                    "Blockers": ", ".join(item.blocking_reasons) or "None — declaration only",
+                    "Assessed": item.evaluated_at,
+                }
+                for item in history
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption(
+        "`REVIEW COMPLETE` means only that both manual declarations covered the retained candle window and met the local age policy at assessment time. It is not proof that corporate actions or calendar events were complete, correct, applicable, or reflected in the data."
+    )
 
 
 def _historical_candle_panel(

@@ -129,3 +129,13 @@
 - [x] Document eligibility semantics, blocking-reason interpretation, evidence limitations, fixture distinction and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option L changes to `main`, then report completion and request the next separate approval.
+
+## Option M — local corporate-action and calendar-review evidence gate
+
+- [x] Audit retained dataset lineage, validation, promotion, robustness and paper-run evidence seams for a separate review gate.
+- [x] Define failing deterministic acceptance tests for explicit review records, declared review scope, missing/stale/unresolved blockers, immutable identity, restart retention and no-actionable capability.
+- [x] Implement immutable local corporate-action and calendar-review evidence with declared review policy, explicit scope, named blockers and no data retrieval capability.
+- [x] Expose a display-safe review-evidence summary in the workbench without promotion, approval, order, paper-run, broker, feed, scheduler or execution controls.
+- [x] Document review semantics, fixture distinction, data/corporate-action/calendar limitations and strict no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option M changes to `main`, then report completion and request the next separate approval.
