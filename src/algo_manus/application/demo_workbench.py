@@ -44,6 +44,10 @@ from algo_manus.application.dataset_review_gate import (
     LocalDatasetReviewGateService,
     LocalDatasetReviewPolicy,
 )
+from algo_manus.application.cross_evidence_linkage import (
+    CrossEvidenceLinkage,
+    LocalCrossEvidenceLinkageReadService,
+)
 from algo_manus.application.experiments import (
     BatchBacktestRequest,
     ExperimentArtifactReadService,
@@ -542,6 +546,14 @@ class FixtureWorkbenchService:
         """Read local review evidence only; it cannot approve research, paper, or execution."""
 
         return self._dataset_review.list_recent(limit)
+
+    def cross_evidence_linkage(self, *, paper_run_evidence_id: str) -> CrossEvidenceLinkage:
+        """Read one paper-review linkage only; no evidence or workflow state is changed."""
+
+        return LocalCrossEvidenceLinkageReadService(
+            self._paper_run_eligibility,
+            self._dataset_review,
+        ).link(paper_run_evidence_id)
 
     def recent_experiments(self, limit: int = 20) -> tuple[ExperimentBatch, ...]:
         """Return local persisted fixture batches newest-first for restart-safe workbench history."""

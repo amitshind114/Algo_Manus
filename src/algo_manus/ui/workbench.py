@@ -652,6 +652,51 @@ def _dataset_review_panel(st, service, instruments, by_id, pd) -> None:
     st.caption(
         "`REVIEW COMPLETE` means only that both manual declarations covered the retained candle window and met the local age policy at assessment time. It is not proof that corporate actions or calendar events were complete, correct, applicable, or reflected in the data."
     )
+    st.divider()
+    st.subheader("Read-only paper-run and dataset-review linkage")
+    st.caption(
+        "This local view joins an already-retained paper-run evidence row to retained dataset-review evidence by exact dataset and instrument identity. It does not create evidence, approve a paper run, promote a strategy, evaluate an order, alter risk controls, or invoke any broker, feed, timed-task or execution path."
+    )
+    paper_history = service.recent_paper_run_eligibility()
+    if not paper_history:
+        st.info("No retained local paper-run evidence is available to link. This view cannot create a paper-run assessment.")
+        return
+    selected_paper_evidence_id = st.selectbox(
+        "Retained paper-run evidence for linkage",
+        [item.evidence_id for item in paper_history],
+        format_func=lambda evidence_id: next(
+            f"{item.evidence_id} · {item.state.value.replace('_', ' ')} · {item.instrument_id}"
+            for item in paper_history
+            if item.evidence_id == evidence_id
+        ),
+        key="cross_evidence_paper_run_id",
+    )
+    linkage = service.cross_evidence_linkage(paper_run_evidence_id=selected_paper_evidence_id)
+    linkage_left, linkage_middle, linkage_right = st.columns(3)
+    linkage_left.metric("Link state", linkage.state.value.replace("_", " "))
+    linkage_middle.metric("Paper evidence", linkage.paper_run_evidence_id)
+    linkage_right.metric("Dataset review", linkage.dataset_review_evidence_id or "None")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Paper batch": linkage.batch_id or "—",
+                    "Paper dataset": linkage.paper_dataset_id or "—",
+                    "Paper instrument": linkage.paper_instrument_id or "—",
+                    "Paper evidence state": linkage.paper_run_state or "—",
+                    "Review dataset": linkage.review_dataset_id or "—",
+                    "Review instrument": linkage.review_instrument_id or "—",
+                    "Review evidence state": linkage.dataset_review_state or "—",
+                    "Named linkage conditions": ", ".join(linkage.reasons) or "Exact identity + manual review declaration only",
+                }
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption(
+        "`LINKED REVIEW COMPLETE` means only that the selected retained paper-run row and one retained manual review row share exact dataset and instrument identifiers. It does not make either record complete, valid, current, approved, risk-cleared, or executable."
+    )
 
 
 def _historical_candle_panel(

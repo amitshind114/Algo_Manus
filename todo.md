@@ -139,3 +139,13 @@
 - [x] Document review semantics, fixture distinction, data/corporate-action/calendar limitations and strict no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
 - [x] Commit and push only Option M changes to `main`, then report completion and request the next separate approval.
+
+## Option N — read-only cross-evidence linkage view
+
+- [x] Audit retained dataset-review and paper-run eligibility evidence lineage, repository and workbench composition seams.
+- [x] Define failing deterministic acceptance tests for matched linkage, missing review evidence, blocked review evidence, dataset/instrument mismatch, restart-safe reads and no-actionable capability.
+- [x] Implement a local read-only linkage service that joins retained paper-run eligibility and dataset-review evidence without changing either record or downstream gate semantics.
+- [x] Expose a display-safe cross-evidence linkage view in the workbench without approval, promotion, order, paper-run, broker, feed, scheduler or execution controls.
+- [x] Document linkage semantics, named mismatch conditions, fixture/manual-declaration limitations and strict no-live exclusions.
+- [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
+- [ ] Commit and push only Option N changes to `main`, then report completion and request the next separate approval.
