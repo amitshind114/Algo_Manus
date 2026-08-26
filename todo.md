@@ -106,4 +106,4 @@
 - [x] Expose display-safe strategy-family comparison and evidence/gate status reads in the workbench without recommendations or actionable order controls.
 - [x] Document strategy assumptions, local simulation limits, no-performance claims, selection bias limits and no-live exclusions.
 - [x] Run lint, full tests, compilation, whitespace, safety scans and browser validation.
-- [ ] Commit and push only Option J changes to `main`, then report completion and request the next separate approval.
+- [x] Commit and push only Option J changes to `main`, then report completion and request the next separate approval.
