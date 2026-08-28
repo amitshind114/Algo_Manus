@@ -8,7 +8,7 @@ from hashlib import sha256
 import hmac
 import json
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Mapping, Sequence
 
 
 _CANONICALIZATION = "utf-8 JSON, sort_keys=true, separators=(',', ':'), verification excluded"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, Mapping
 
-from algo_manus.domain.strategy import ParameterValidationError, Strategy, StrategyMetadata
+from algo_manus.domain.strategy import Strategy, StrategyMetadata
 
 
 class StrategyNotRegisteredError(KeyError):

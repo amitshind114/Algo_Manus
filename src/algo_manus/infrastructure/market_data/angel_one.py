@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 import json
 import os
-from typing import Any
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 

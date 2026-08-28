@@ -92,7 +92,7 @@ class ResearchDatasetValidator:
             )
         elif any(
             later.timestamp - earlier.timestamp > expected_gap * self._policy.maximum_gap_multiplier
-            for earlier, later in zip(dataset.candles, dataset.candles[1:])
+            for earlier, later in zip(dataset.candles, dataset.candles[1:], strict=False)
         ):
             issues.append(
                 DataValidationIssue(

@@ -192,12 +192,22 @@
 
 ## Post-audit build-closure plan
 
-- [ ] Priority 1: decompose the large Streamlit workbench into page-level renderers and wiring helpers without changing application-service contracts, data semantics, safety copy, or active navigation.
-- [ ] Priority 2: refine retained research and artifact inspection UX through application-service reads only; preserve honest provenance, no-live, no-recommendation, and no-authority boundaries.
-- [ ] Priority 3: design and acceptance-test the manual, bounded Angel historical-data gate covering canonical instrument selection, research-use enforcement, interval/window limits, source/refresh validation, immutable retention, and named failures; do not implement new provider actions in this slice.
-- [ ] Priority 4: only after separate approval and user-owned local configuration, implement the bounded historical-data retrieval vertical slice with no live quotes, WebSockets, account/position access, order endpoints, scheduler, or cloud deployment.
-- [ ] Priority 5: define the longer local paper-observation evidence gate before considering any broker-authoritative marks or reconciliation; no live execution is implied.
+- [ ] Priority 2: decompose the large Streamlit workbench into page-level renderers and wiring helpers without changing application-service contracts, data semantics, safety copy, or active navigation.
+- [ ] Priority 3: refine retained research and artifact inspection UX through application-service reads only; preserve honest provenance, no-live, no-recommendation, and no-authority boundaries.
+- [ ] Priority 4: design and acceptance-test the manual, bounded Angel historical-data gate covering canonical instrument selection, research-use enforcement, interval/window limits, source/refresh validation, immutable retention, and named failures; do not implement new provider actions in this slice.
+- [ ] Priority 5: only after separate approval and user-owned local configuration, implement the bounded historical-data retrieval vertical slice with no live quotes, WebSockets, account/position access, order endpoints, scheduler, or cloud deployment.
+- [ ] Priority 6: define the longer local paper-observation evidence gate before considering any broker-authoritative marks or reconciliation; no live execution is implied.
 - [ ] Keep cloud deployment and controlled live execution as separate future decisions requiring independent security, data-rights, operational, broker/member, and legal review; never infer them from a dashboard or backtest result.
 - [ ] Approve exactly one priority before implementation and close it with focused tests, full verification, browser validation where applicable, and a clean pushed commit.
 
 This checklist is a build plan only; it does not authorize live trading, cloud deployment, background automation, broker order access, or customer-facing financial claims.
+
+## Approved Priority 1 — boundary and quality closure
+
+- [x] Audit exact stale provider/network statements in maintained documentation and map each statement to the current bounded adapter behavior.
+- [x] Add a deterministic documentation-boundary contract test covering public instrument sync, manual Angel session/JWT handling, research-only historical candles, and absent live/order/account/feed paths.
+- [x] Correct stale documentation without implying that bounded read-only provider adapters are production-ready or broker-authoritative.
+- [x] Make the existing Ruff configuration run through `make lint` alongside compilation, preserving the existing unittest test command.
+- [x] Add or update deterministic quality-gate coverage without introducing network calls, credentials, execution endpoints, schedulers, or cloud deployment.
+- [x] Run focused and full tests, lint, whitespace, removed-reference, secret, and prohibited-capability scans; review the complete diff.
+- [ ] Commit and push only Priority 1 changes, verify `HEAD == origin/main`, then request approval for Priority 2.

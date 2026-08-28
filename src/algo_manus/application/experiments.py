@@ -15,7 +15,7 @@ from algo_manus.application.dataset_validation import (
     ResearchDatasetValidator,
 )
 from algo_manus.application.local_event_bus import LocalApplicationEvent, LocalEventBus, LocalEventType
-from algo_manus.domain.backtest import BacktestResult, BacktestSpec, BacktestTrade
+from algo_manus.domain.backtest import BacktestSpec, BacktestTrade
 from algo_manus.domain.experiment import (
     ExperimentBatch,
     ExperimentStatus,
@@ -23,7 +23,6 @@ from algo_manus.domain.experiment import (
 )
 from algo_manus.domain.market_data import CandleDataset, DataUseCase
 from algo_manus.domain.research import (
-    DataValidationStatus,
     DatasetLineage,
     DatasetValidationOutcome,
     ResearchExecutionAssumptions,
@@ -168,7 +167,6 @@ class ExperimentBatchService:
         validated_at: datetime | None = None,
     ) -> ExperimentBatch:
         datasets = tuple(request.datasets_by_instrument.values())
-        first = datasets[0]
         self._validate_comparable_datasets(datasets)
         result_items: list[SecurityExperimentResult] = []
         for instrument_id, dataset in request.datasets_by_instrument.items():

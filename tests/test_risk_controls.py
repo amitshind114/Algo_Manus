@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import sqlite3
 import unittest
 
 from algo_manus.application.paper_execution import PaperExecutionService

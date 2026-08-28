@@ -1,5 +1,4 @@
 from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 

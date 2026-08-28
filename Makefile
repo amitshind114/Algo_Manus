@@ -5,3 +5,4 @@ test:
 
 lint:
 	python3.12 -m compileall -q src tests
+	ruff check src tests

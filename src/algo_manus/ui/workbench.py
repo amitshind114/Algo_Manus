@@ -304,7 +304,7 @@ def _overview(st, service, pd) -> None:
             ("Trade bound per result", str(lifecycle.max_trades_per_result) if lifecycle.max_trades_per_result is not None else "In-memory only"),
         )
         lifecycle_columns = st.columns(len(lifecycle_details))
-        for column, (label, value) in zip(lifecycle_columns, lifecycle_details):
+        for column, (label, value) in zip(lifecycle_columns, lifecycle_details, strict=True):
             column.caption(label)
             column.write(value)
         st.dataframe(
