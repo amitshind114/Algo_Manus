@@ -189,3 +189,15 @@
 - [x] Add or adjust deterministic tests where UI/public copy or cleanup can affect contract expectations; do not weaken safety or fixture-honesty coverage.
 - [x] Run lint, full tests, whitespace, repository-reference, secret, prohibited-capability, and fresh-browser checks.
 - [x] Commit and push only the conservative cleanup changes to `main`, then report the retained/removed/reworded inventory and ask approval before a separate next slice.
+
+## Post-audit build-closure plan
+
+- [ ] Priority 1: decompose the large Streamlit workbench into page-level renderers and wiring helpers without changing application-service contracts, data semantics, safety copy, or active navigation.
+- [ ] Priority 2: refine retained research and artifact inspection UX through application-service reads only; preserve honest provenance, no-live, no-recommendation, and no-authority boundaries.
+- [ ] Priority 3: design and acceptance-test the manual, bounded Angel historical-data gate covering canonical instrument selection, research-use enforcement, interval/window limits, source/refresh validation, immutable retention, and named failures; do not implement new provider actions in this slice.
+- [ ] Priority 4: only after separate approval and user-owned local configuration, implement the bounded historical-data retrieval vertical slice with no live quotes, WebSockets, account/position access, order endpoints, scheduler, or cloud deployment.
+- [ ] Priority 5: define the longer local paper-observation evidence gate before considering any broker-authoritative marks or reconciliation; no live execution is implied.
+- [ ] Keep cloud deployment and controlled live execution as separate future decisions requiring independent security, data-rights, operational, broker/member, and legal review; never infer them from a dashboard or backtest result.
+- [ ] Approve exactly one priority before implementation and close it with focused tests, full verification, browser validation where applicable, and a clean pushed commit.
+
+This checklist is a build plan only; it does not authorize live trading, cloud deployment, background automation, broker order access, or customer-facing financial claims.
