@@ -87,15 +87,20 @@ class BarBacktestService:
             equity_curve.append((next_candle.timestamp, marked_equity))
             exposure_points += int(position is not None)
 
+        final_candle = candles[-1]
         if position is not None and spec.force_close_at_end:
-            final_candle = candles[-1]
             trade, cash = self._close(position, final_candle.timestamp, final_candle.close, cash, spec)
             trades.append(trade)
-            equity_curve.append((final_candle.timestamp, cash))
+            position = None
+            # The loop has already recorded equity for the final candle. Replace
+            # it so force-close does not create a duplicate timestamp.
+            equity_curve[-1] = (final_candle.timestamp, cash)
+
+        final_equity = cash + (position.quantity * final_candle.close if position else 0.0)
 
         metrics = self._metrics(
             spec.initial_cash,
-            cash,
+            final_equity,
             trades,
             equity_curve,
             exposure_points=exposure_points,
@@ -209,14 +214,14 @@ class BarBacktestService:
     @staticmethod
     def _metrics(
         initial_cash: float,
-        final_cash: float,
+        final_equity: float,
         trades: Sequence[BacktestTrade],
         equity_curve: Sequence[tuple[datetime, float]],
         *,
         exposure_points: int,
         annualization_periods: int | None,
     ) -> BacktestMetrics:
-        net_pnl = final_cash - initial_cash
+        net_pnl = final_equity - initial_cash
         total_return_pct = (net_pnl / initial_cash) * 100
         peak = initial_cash
         max_drawdown = 0.0
@@ -229,7 +234,7 @@ class BarBacktestService:
         loss_total = abs(sum(trade.net_pnl for trade in losses))
         profit_factor = sum(trade.net_pnl for trade in wins) / loss_total if loss_total else None
         returns = BarBacktestService._equity_returns(initial_cash, equity_curve)
-        cagr_pct = BarBacktestService._cagr_pct(initial_cash, final_cash, equity_curve)
+        cagr_pct = BarBacktestService._cagr_pct(initial_cash, final_equity, equity_curve)
         sharpe_ratio = BarBacktestService._sharpe_ratio(returns, annualization_periods)
         sortino_ratio = BarBacktestService._sortino_ratio(returns, annualization_periods)
         expectancy = fmean(trade.net_pnl for trade in trades) if trades else None
@@ -296,15 +301,15 @@ class BarBacktestService:
 
     @staticmethod
     def _cagr_pct(
-        initial_cash: float, final_cash: float, equity_curve: Sequence[tuple[datetime, float]]
+        initial_cash: float, final_equity: float, equity_curve: Sequence[tuple[datetime, float]]
     ) -> float | None:
-        if len(equity_curve) < 2 or initial_cash <= 0 or final_cash <= 0:
+        if len(equity_curve) < 2 or initial_cash <= 0 or final_equity <= 0:
             return None
         duration_days = (equity_curve[-1][0] - equity_curve[0][0]).total_seconds() / 86_400
         if duration_days < 365:
             return None
         years = duration_days / 365.25
-        return ((final_cash / initial_cash) ** (1 / years) - 1) * 100
+        return ((final_equity / initial_cash) ** (1 / years) - 1) * 100
 
     @staticmethod
     def _sharpe_ratio(returns: Sequence[float], annualization_periods: int | None) -> float | None:
