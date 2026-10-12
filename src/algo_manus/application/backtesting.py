@@ -32,8 +32,8 @@ class BarBacktestService:
     """Long-only research engine with explicit, conservative execution assumptions.
 
     A signal derived from candle ``t`` can only be filled at candle ``t + 1``
-    open. Strategies receive the bounded trailing window needed for their
-    declared required history, keeping per-bar work independent of dataset length.
+    open. This engine is intentionally small and auditable; advanced order book,
+    intrabar and partial-fill modelling remain later extensions.
     """
 
     def run(
@@ -65,10 +65,9 @@ class BarBacktestService:
         exposure_points = 0
         enter_signal_count = 0
         exit_signal_count = 0
-        window_size = required_history + 1
 
         for index in range(required_history, len(candles) - 1):
-            history = candles[max(0, index + 1 - window_size) : index + 1]
+            history = candles[: index + 1]
             signal = strategy.signal(history, parameters.parameters)
             next_candle = candles[index + 1]
             enter_signal_count += int(signal is SignalAction.ENTER_LONG)
@@ -320,7 +319,7 @@ class BarBacktestService:
         return (fmean(returns) / deviation * sqrt(annualization_periods)) if deviation else None
 
     @staticmethod
-    def _sortino_ratio(returns: Sequence[float], annualization_periods: int | None) -> float | None:
+   def _sortino_ratio(returns: Sequence[float], annualization_periods: int | None) -> float | None:
         if annualization_periods is None or len(returns) < 2:
             return None
         downside = tuple(min(item, 0.0) for item in returns)
