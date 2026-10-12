@@ -7,6 +7,7 @@ orders, or live execution services.
 
 from __future__ import annotations
 
+from statistics import fmean
 from typing import Mapping, Sequence
 
 from algo_manus.domain.market_data import Candle
@@ -25,21 +26,14 @@ def _validate_thresholds(parameters: Mapping[str, int | float]) -> None:
         raise ParameterValidationError("entry_threshold must be smaller than exit_threshold")
 
 
-def _wilder_rsi(closes: Sequence[float], window: int) -> float:
-    """Return Wilder-smoothed RSI for the final close in ``closes``."""
+def _rsi(closes: Sequence[float], window: int) -> float:
     changes = [closes[index] - closes[index - 1] for index in range(1, len(closes))]
     if len(changes) < window:
         raise ValueError("RSI requires at least one complete window")
-
-    gains = [max(change, 0.0) for change in changes]
-    losses = [max(-change, 0.0) for change in changes]
-    average_gain = fmean(gains[:window])
-    average_loss = fmean(losses[:window])
-
-    for index in range(window, len(changes)):
-        average_gain = ((average_gain * (window - 1)) + gains[index]) / window
-        average_loss = ((average_loss * (window - 1)) + losses[index]) / window
-
+    gains = [max(change, 0.0) for change in changes[-window:]]
+    losses = [max(-change, 0.0) for change in changes[-window:]]
+    average_gain = fmean(gains)
+    average_loss = fmean(losses)
     if average_loss == 0:
         return 100.0 if average_gain > 0 else 50.0
     return 100.0 - (100.0 / (1.0 + (average_gain / average_loss)))
@@ -54,7 +48,7 @@ class RsiThresholdReversionStrategy:
         display_name="RSI threshold reversion",
         version="1.0.0",
         author="Algo Manus",
-        description="Long-only Wilder RSI threshold-crossing mean-reversion research strategy.",
+        description="Long-only RSI threshold-crossing mean-reversion research strategy.",
         risk_notes=(
             "Research reference only. Signals use closed local bars and have no broker, paper-order or live-execution authority."
         ),
@@ -83,10 +77,9 @@ class RsiThresholdReversionStrategy:
         if len(candles) < window + 2:
             return SignalAction.HOLD
 
-        # Previous and current RSI require window + 2 closes.
         closes = [candle.close for candle in candles[-(window + 2) :]]
-        previous_rsi = _wilder_rsi(closes[:-1], window)
-        current_rsi = _wilder_rsi(closes, window)
+        previous_rsi = _rsi(closes[:-1], window)
+        current_rsi = _rsi(closes, window)
         entry_threshold = float(values["entry_threshold"])
         exit_threshold = float(values["exit_threshold"])
         if previous_rsi >= entry_threshold and current_rsi < entry_threshold:
