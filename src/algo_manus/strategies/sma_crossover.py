@@ -63,11 +63,11 @@ class SmaCrossoverStrategy:
         fast, slow = self._windows(parameters)
         if len(candles) < slow + 1:
             return SignalAction.HOLD
-        previous = candles[:-1]
-        prior_fast = fmean(candle.close for candle in previous[-fast:])
-        prior_slow = fmean(candle.close for candle in previous[-slow:])
-        current_fast = fmean(candle.close for candle in candles[-fast:])
-        current_slow = fmean(candle.close for candle in candles[-slow:])
+        closes = [candle.close for candle in candles[-(slow + 1) :]]
+        prior_fast = fmean(closes[-fast - 1 : -1])
+        prior_slow = fmean(closes[-slow - 1 : -1])
+        current_fast = fmean(closes[-fast:])
+        current_slow = fmean(closes[-slow:])
         if prior_fast <= prior_slow and current_fast > current_slow:
             return SignalAction.ENTER_LONG
         if prior_fast >= prior_slow and current_fast < current_slow:
