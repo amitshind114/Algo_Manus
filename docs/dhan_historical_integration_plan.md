@@ -87,12 +87,19 @@ Enabled explicitly approved Dhan datasets to flow through retained-dataset backt
 
 ### Phase 6 - UI retrieval slice
 
-Status: PENDING
+Status: COMPLETE
 
-- Add a manual Dhan historical-retrieval panel after workbench modularization.
-- Never retrieve during page render.
-- Show display-safe configuration and error states only.
-- Do not display credentials or raw responses.
+Added an isolated, reusable Streamlit panel in `ui/dhan_historical.py`.
+
+- Shows display-safe Dhan configuration status.
+- Supports manual selection of canonical Dhan instrument ID, interval, and UTC date range.
+- Requires an explicit Fetch historical candles button.
+- Never retrieves during Streamlit page render.
+- Persists retrieved data through `MarketDataService` and the immutable SQLite dataset repository.
+- Displays only safe dataset metadata and named errors.
+- Never displays credentials, headers, or raw provider responses.
+- Contains no order, account, position, WebSocket, scheduler, fixture-fallback, or cloud capability.
+- Is intentionally independent of the current monolithic workbench so it can be mounted after workbench modularization.
 
 ## Explicit exclusions
 
