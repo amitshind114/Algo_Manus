@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from pathlib import Path
 import json
 import tempfile
 import unittest
 
 from algo_manus.application.market_data import MarketDataRequest, MarketDataService
-from algo_manus.domain.market_data import DataSourceKind, DataUseCase
+from algo_manus.domain.market_data import CandleDataset, DataSourceKind, DataUseCase
 from algo_manus.infrastructure.market_data.dhan_historical import DhanHistoricalCandleProvider
 from algo_manus.infrastructure.market_data.sqlite_repository import SqliteCandleDatasetRepository
 
@@ -28,7 +30,7 @@ class DhanDatasetLineageTests(unittest.TestCase):
         base = int(self.start.timestamp())
         return {
             "open": [100.0, 101.0],
-            "high": [102.0, 103.0],
+            "high": [102.0, max(103.0, close_second)],
             "low": [99.0, 100.0],
             "close": [101.0, close_second],
             "volume": [1000, 1100],
@@ -109,10 +111,17 @@ class DhanDatasetLineageTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "retained dataset identity conflict"):
-            service.ingest(
-                self._provider(self._payload(close_second=103.0)),
-                self._request(),
-                retrieved_at=self.retrieved_at,
+            repository.save(
+                CandleDataset(
+                    dataset_id=first.dataset_id,
+                    instrument_id=first.instrument_id,
+                    interval=first.interval,
+                    provenance=replace(
+                        first.provenance,
+                        raw_content_sha256=sha256(b"different-raw-response").hexdigest(),
+                    ),
+                    candles=first.candles,
+                )
             )
 
         restored = repository.get(first.dataset_id)

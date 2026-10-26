@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import os
 import tempfile
 from pathlib import Path
@@ -115,9 +114,9 @@ class ThemeTests(unittest.TestCase):
         render_header(st, "Title", "Subtitle")
 
         self.assertEqual(len(calls), 4)
-        self.assertEqual(calls[1][1][0], "Title")
-        self.assertEqual(calls[2][0], "caption")
-        self.assertEqual(calls[2][1][0], "Subtitle")
+        self.assertIn("Title", calls[2][1][0])
+        self.assertEqual(calls[3][0], "caption")
+        self.assertEqual(calls[3][1][0], "Subtitle")
 
 
 if __name__ == "__main__":

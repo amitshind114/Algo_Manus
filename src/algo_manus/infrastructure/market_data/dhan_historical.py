@@ -8,7 +8,6 @@ WebSockets, schedulers, or any execution capability.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256

@@ -37,8 +37,8 @@ def initialize_workbench_state(
     else:
         st.session_state["active_batch"] = persisted_by_id[active.batch_id]
     st.session_state.setdefault("workspace", DEFAULT_PAGE)
-    if st.session_state.workspace not in valid_pages():
-        st.session_state.workspace = DEFAULT_PAGE
+    if st.session_state.get("workspace") not in valid_pages():
+        st.session_state["workspace"] = DEFAULT_PAGE
 
 
 def local_public_instrument_source():

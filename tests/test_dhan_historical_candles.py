@@ -81,8 +81,8 @@ class DhanHistoricalCandleProviderTests(unittest.TestCase):
         self.assertEqual(request["securityId"], "1333")
         self.assertEqual(request["exchangeSegment"], "NSE_EQ")
         self.assertEqual(request["interval"], "5m")
-        self.assertEqual(dataset.source_name, "dhan")
-        self.assertEqual(dataset.source_kind, DataSourceKind.BROKER)
+        self.assertEqual(dataset.provenance.source_name, "dhan")
+        self.assertEqual(dataset.provenance.source_kind, DataSourceKind.BROKER)
         self.assertEqual(len(dataset.candles), 2)
         self.assertEqual(dataset.candles[0].timestamp, self.start)
         self.assertEqual(
@@ -135,7 +135,7 @@ class DhanHistoricalCandleProviderTests(unittest.TestCase):
                 interval="5m",
                 start=self.start,
                 end=self.start + timedelta(days=91),
-                retrieved_at=self.retrieved_at,
+                retrieved_at=self.start + timedelta(days=92),
             )
         self.assertEqual(transport.calls, [])
 
