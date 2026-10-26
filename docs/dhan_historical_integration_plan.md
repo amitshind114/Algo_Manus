@@ -10,24 +10,48 @@ Algo Manus remains a local research, backtesting, and paper-simulation platform.
 
 ### Phase 0 - Preparation
 
-- Add provider-contract template.
-- Add safety-boundary documentation.
-- Add failing boundary and contract-gate tests.
-- Add no network client and no provider implementation.
+Status: COMPLETE
+
+- Added provider-contract template.
+- Added safety-boundary documentation.
+- Added boundary and contract-gate tests.
+- No network client or provider implementation added.
 
 ### Phase 1 - Contract confirmation
 
-- Confirm every required Dhan historical-data contract field from official documentation.
-- Record confirmed values in `docs/dhan_provider_contract.md`.
-- Block implementation until the contract is complete.
+Status: COMPLETE
+
+Confirmed from official DhanHQ v2 documentation:
+
+- Base URL: `https://api.dhan.co/v2`
+- Daily endpoint: `POST /charts/historical`
+- Intraday endpoint: `POST /charts/intraday`
+- Authentication header: `access-token`
+- Intraday intervals: 1, 5, 15, 25, and 60 minutes
+- Intraday maximum window: 90 days
+- Timestamps: Unix epoch seconds
+- Data API rate limit: 5 requests per second
+- Supported segments: `IDX_I`, `NSE_EQ`, `NSE_FNO`, `NSE_CURRENCY`, `BSE_EQ`, `MCX_COMM`, `BSE_CURRENCY`, `BSE_FNO`
+
+Implementation constraints:
+
+- The adapter must fail closed if the provider contract, instrument mapping, credentials, interval, or request window is invalid.
+- Intraday requests must not exceed 90 days.
+- Epoch-second timestamps must be converted to timezone-aware UTC timestamps.
+- Responses must be validated for ordering, duplicates, OHLC consistency, and volume validity.
+- Data must be treated as unadjusted/unknown unless Dhan explicitly confirms an adjustment basis.
 
 ### Phase 2 - Research source policy
+
+Status: PENDING
 
 - Generalize retained-dataset backtesting from Angel One-specific filtering to an explicit approved-source policy.
 - Fail closed for unknown providers.
 - Preserve existing Angel One behavior through explicit policy configuration.
 
 ### Phase 3 - Historical adapter
+
+Status: PENDING
 
 - Add a Dhan historical-data-only transport client.
 - Implement `DhanHistoricalCandleProvider` behind `MarketDataProviderPort`.
@@ -37,6 +61,8 @@ Algo Manus remains a local research, backtesting, and paper-simulation platform.
 
 ### Phase 4 - Dataset lineage
 
+Status: PENDING
+
 - Persist normalized Dhan candles through the existing immutable dataset repository.
 - Retain raw-response SHA-256 provenance.
 - Link instrument snapshot, validation policy, retrieval time, and dataset identity.
@@ -44,10 +70,14 @@ Algo Manus remains a local research, backtesting, and paper-simulation platform.
 
 ### Phase 5 - Retained backtesting
 
+Status: PENDING
+
 - Allow explicitly approved Dhan datasets to flow through retained-dataset backtesting.
 - Pin dataset ID, raw-content hash, instrument snapshot, strategy version, parameters, and policy versions in the backtest manifest.
 
 ### Phase 6 - UI retrieval slice
+
+Status: PENDING
 
 - Add a manual Dhan historical-retrieval panel after workbench modularization.
 - Never retrieve during page render.
