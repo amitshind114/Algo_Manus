@@ -74,10 +74,15 @@ class SqliteCandleDatasetRepository:
 
     def save(self, dataset: CandleDataset) -> None:
         with self._connection() as connection:
-            exists = connection.execute(
-                "SELECT 1 FROM candle_datasets WHERE dataset_id = ?", (dataset.dataset_id,)
+            existing = connection.execute(
+                "SELECT raw_content_sha256 FROM candle_datasets WHERE dataset_id = ?",
+                (dataset.dataset_id,),
             ).fetchone()
-            if exists is not None:
+            if existing is not None:
+                if existing["raw_content_sha256"] != dataset.provenance.raw_content_sha256:
+                    raise ValueError(
+                        "retained dataset identity conflict: same dataset ID has a different raw-content hash"
+                    )
                 return
             provenance = dataset.provenance
             connection.execute(

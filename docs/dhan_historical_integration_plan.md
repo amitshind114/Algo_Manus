@@ -62,12 +62,16 @@ Added `DhanHistoricalCandleProvider` behind `MarketDataProviderPort`.
 
 ### Phase 4 - Dataset lineage
 
-Status: PENDING
+Status: COMPLETE
 
-- Persist normalized Dhan candles through the existing immutable dataset repository.
-- Retain raw-response SHA-256 provenance.
-- Link instrument snapshot, validation policy, retrieval time, and dataset identity.
-- Reject silent overwrites, silent merges, and inconsistent duplicate responses.
+Integrated Dhan historical datasets with the existing immutable SQLite dataset repository and `MarketDataService`.
+
+- Dhan datasets persist with source `dhan`, broker source kind, research use case, retrieval time, source URI, adjustment basis, and raw-response SHA-256.
+- Identical retained responses are idempotent and do not duplicate candles.
+- A dataset-ID collision with a different raw-content hash now fails closed instead of being silently ignored.
+- Different Dhan responses create distinct immutable dataset identities.
+- Restart-safe persistence is verified through repository recreation.
+- Tests use injected transport and make no network calls.
 
 ### Phase 5 - Retained backtesting
 
