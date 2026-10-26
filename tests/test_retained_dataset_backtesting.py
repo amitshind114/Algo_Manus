@@ -8,6 +8,7 @@ import unittest
 
 from algo_manus.application.dataset_validation import ResearchDatasetValidationError
 from algo_manus.application.retained_dataset_backtesting import (
+    ApprovedResearchSourcePolicy,
     RetainedDatasetBacktestRequest,
     RetainedDatasetBacktestService,
 )
@@ -47,8 +48,14 @@ class RetainedDatasetBacktestServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def _dataset(self, *, source_kind: DataSourceKind = DataSourceKind.BROKER, gap: bool = False) -> CandleDataset:
-        instrument_id = "ANGEL_ONE:NSE:NSE:500325"
+    def _dataset(
+        self,
+        *,
+        source_name: str = "angel_one",
+        source_kind: DataSourceKind = DataSourceKind.BROKER,
+        gap: bool = False,
+    ) -> CandleDataset:
+        instrument_id = f"{source_name.upper()}:NSE:NSE:500325"
         candles = tuple(
             Candle(
                 timestamp=self.start + timedelta(days=index + (4 if gap and index >= 4 else 0)),
@@ -64,11 +71,11 @@ class RetainedDatasetBacktestServiceTests(unittest.TestCase):
             instrument_id=instrument_id,
             interval="1d",
             provenance=DataProvenance(
-                source_name="angel_one",
+                source_name=source_name,
                 source_kind=source_kind,
-                source_uri="https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData",
+                source_uri="https://example.com/historical-candles",
                 retrieved_at=self.start + timedelta(days=20),
-                raw_content_sha256=sha256(f"{source_kind.value}:{gap}".encode()).hexdigest(),
+                raw_content_sha256=sha256(f"{source_name}:{source_kind.value}:{gap}".encode()).hexdigest(),
                 adjustment_basis="unadjusted broker historical candles",
                 use_case=DataUseCase.RESEARCH,
             ),
@@ -126,6 +133,67 @@ class RetainedDatasetBacktestServiceTests(unittest.TestCase):
         with self.assertRaises(ResearchDatasetValidationError):
             gappy_service.run(self._request(gappy.dataset_id), now=self.start)
         self.assertEqual(self.batches.list_recent(), ())
+
+    def test_default_policy_rejects_dhan_dataset(self) -> None:
+        dhan_dataset = self._dataset(source_name="dhan")
+        repository = MemoryCandleRepository((dhan_dataset,))
+        service = RetainedDatasetBacktestService(repository, self.batches, self.manifests)
+
+        with self.assertRaisesRegex(ValueError, "approved by the research source policy"):
+            service.run(self._request(dhan_dataset.dataset_id), now=self.start)
+        self.assertEqual(self.batches.list_recent(), ())
+
+    def test_explicit_policy_accepts_dhan_broker_dataset(self) -> None:
+        dhan_dataset = self._dataset(source_name="dhan")
+        repository = MemoryCandleRepository((dhan_dataset,))
+        policy = ApprovedResearchSourcePolicy.for_sources("angel_one", "dhan")
+        service = RetainedDatasetBacktestService(
+            repository,
+            self.batches,
+            self.manifests,
+            policy=policy,
+        )
+
+        run = service.run(self._request(dhan_dataset.dataset_id), now=self.start)
+
+        self.assertEqual(run.dataset.provenance.source_name, "dhan")
+        self.assertTrue(run.validation.research_eligible)
+        self.assertEqual(len(self.batches.list_recent()), 1)
+
+    def test_explicit_policy_still_rejects_dhan_fixture_dataset(self) -> None:
+        dhan_fixture = self._dataset(source_name="dhan", source_kind=DataSourceKind.FIXTURE)
+        repository = MemoryCandleRepository((dhan_fixture,))
+        policy = ApprovedResearchSourcePolicy.for_sources("angel_one", "dhan")
+        service = RetainedDatasetBacktestService(
+            repository,
+            self.batches,
+            self.manifests,
+            policy=policy,
+        )
+
+        with self.assertRaisesRegex(ValueError, "broker historical"):
+            service.run(self._request(dhan_fixture.dataset_id), now=self.start)
+        self.assertEqual(self.batches.list_recent(), ())
+
+    def test_available_datasets_respects_explicit_source_policy(self) -> None:
+        dhan_dataset = self._dataset(source_name="dhan")
+        repository = MemoryCandleRepository((self.dataset, dhan_dataset))
+        angel_only_service = RetainedDatasetBacktestService(repository, self.batches, self.manifests)
+        multi_source_service = RetainedDatasetBacktestService(
+            repository,
+            self.batches,
+            self.manifests,
+            policy=ApprovedResearchSourcePolicy.for_sources("angel_one", "dhan"),
+        )
+
+        self.assertEqual(
+            {item.provenance.source_name for item in angel_only_service.available_datasets()},
+            {"angel_one"},
+        )
+        self.assertEqual(
+            {item.provenance.source_name for item in multi_source_service.available_datasets()},
+            {"angel_one", "dhan"},
+        )
 
 
 if __name__ == "__main__":

@@ -43,11 +43,19 @@ Implementation constraints:
 
 ### Phase 2 - Research source policy
 
-Status: PENDING
+Status: COMPLETE
 
-- Generalize retained-dataset backtesting from Angel One-specific filtering to an explicit approved-source policy.
-- Fail closed for unknown providers.
-- Preserve existing Angel One behavior through explicit policy configuration.
+Generalized retained-dataset backtesting from Angel One-specific filtering to an explicit `ApprovedResearchSourcePolicy`.
+
+Behavior:
+
+- Default policy remains Angel One-only.
+- Policy accepts only explicitly approved source names.
+- Policy accepts only broker-kind datasets.
+- Research use case remains mandatory.
+- Unknown providers fail closed.
+- Dhan is not enabled by default.
+- Dhan may be explicitly added to the policy only with its future historical adapter.
 
 ### Phase 3 - Historical adapter
 
@@ -56,6 +64,7 @@ Status: PENDING
 - Add a Dhan historical-data-only transport client.
 - Implement `DhanHistoricalCandleProvider` behind `MarketDataProviderPort`.
 - Normalize Dhan responses into immutable `Candle` values.
+- Enable Dhan explicitly through `ApprovedResearchSourcePolicy`.
 - Use injectable transport in tests.
 - Do not implement order, account, position, WebSocket, scheduler, or cloud behavior.
 

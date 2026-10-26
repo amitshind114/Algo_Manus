@@ -23,6 +23,23 @@ from algo_manus.strategies.registry import built_in_registry
 
 
 @dataclass(frozen=True, slots=True)
+class ApprovedResearchSourcePolicy:
+    """Explicit allow-list of retained broker sources eligible for research backtesting."""
+
+    source_names: frozenset[str]
+    source_kinds: frozenset[DataSourceKind]
+
+    @classmethod
+    def for_sources(cls, *source_names: str) -> "ApprovedResearchSourcePolicy":
+        if not source_names:
+            raise ValueError("at least one approved research source is required")
+        return cls(
+            source_names=frozenset(source_names),
+            source_kinds=frozenset({DataSourceKind.BROKER}),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class RetainedDatasetBacktestRequest:
     """Explicit local selection and execution inputs for one broker dataset."""
 
@@ -53,13 +70,17 @@ class RetainedDatasetBacktestRun:
 
 
 class RetainedDatasetBacktestService:
-    """Run a single explicitly selected retained Angel broker dataset.
+    """Run a single explicitly selected retained broker dataset.
 
-    The service requires a broker/research dataset whose source is Angel One,
-    validates it before invoking the existing next-bar engine, and pins its
-    exact dataset id, raw-content hash and validation outcome in the existing
-    immutable research manifest.  It intentionally does not create a fixture
-    fallback, multi-dataset synthetic universe or any provider request.
+    The service accepts only broker/research datasets whose source is explicitly
+    approved by ``ApprovedResearchSourcePolicy``.  The default policy preserves
+    the existing Angel One-only behavior.  Dhan becomes eligible only when it is
+    explicitly added to the approved-source policy.
+
+    The service validates a dataset before invoking the existing next-bar engine
+    and pins its exact dataset id, raw-content hash and validation outcome in the
+    existing immutable research manifest.  It intentionally does not create a
+    fixture fallback, multi-dataset synthetic universe or any provider request.
     """
 
     def __init__(
@@ -68,9 +89,11 @@ class RetainedDatasetBacktestService:
         batch_repository: ExperimentBatchRepository,
         manifest_repository: ResearchRunManifestRepository,
         validator: ResearchDatasetValidator | None = None,
+        policy: ApprovedResearchSourcePolicy | None = None,
     ) -> None:
         self._candle_repository = candle_repository
         self._validator = validator or ResearchDatasetValidator()
+        self._policy = policy or ApprovedResearchSourcePolicy.for_sources("angel_one")
         self._batch_service = ExperimentBatchService(
             BarBacktestService(),
             batch_repository,
@@ -79,9 +102,14 @@ class RetainedDatasetBacktestService:
         )
 
     def available_datasets(self, *, limit: int = 20) -> tuple[CandleDataset, ...]:
-        """List bounded retained Angel evidence only; never fetch or normalize data."""
+        """List bounded retained evidence for explicitly approved sources only."""
 
-        return self._candle_repository.list_recent(source_name="angel_one", limit=limit)
+        datasets: list[CandleDataset] = []
+        for source_name in sorted(self._policy.source_names):
+            datasets.extend(
+                self._candle_repository.list_recent(source_name=source_name, limit=limit)
+            )
+        return tuple(datasets[:limit])
 
     def run(
         self,
@@ -124,10 +152,13 @@ class RetainedDatasetBacktestService:
         )
         return RetainedDatasetBacktestRun(dataset=dataset, validation=validation, batch=batch)
 
-    @staticmethod
-    def _assert_approved_dataset(dataset: CandleDataset) -> None:
-        if dataset.provenance.source_name != "angel_one" or dataset.provenance.source_kind is not DataSourceKind.BROKER:
-            raise ValueError("retained-dataset backtests require an Angel One broker historical dataset")
+    def _assert_approved_dataset(self, dataset: CandleDataset) -> None:
+        if dataset.provenance.source_name not in self._policy.source_names:
+            raise ValueError(
+                "retained-dataset backtests require a source approved by the research source policy"
+            )
+        if dataset.provenance.source_kind not in self._policy.source_kinds:
+            raise ValueError("retained-dataset backtests require a broker historical dataset")
         if dataset.provenance.use_case is not DataUseCase.RESEARCH:
             raise ValueError("retained-dataset backtests require a research-use dataset")
         if dataset.provenance.retrieved_at < dataset.candles[-1].timestamp:
