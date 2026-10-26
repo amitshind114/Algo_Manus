@@ -33,40 +33,32 @@ Confirmed from official DhanHQ v2 documentation:
 - Data API rate limit: 5 requests per second
 - Supported segments: `IDX_I`, `NSE_EQ`, `NSE_FNO`, `NSE_CURRENCY`, `BSE_EQ`, `MCX_COMM`, `BSE_CURRENCY`, `BSE_FNO`
 
-Implementation constraints:
-
-- The adapter must fail closed if the provider contract, instrument mapping, credentials, interval, or request window is invalid.
-- Intraday requests must not exceed 90 days.
-- Epoch-second timestamps must be converted to timezone-aware UTC timestamps.
-- Responses must be validated for ordering, duplicates, OHLC consistency, and volume validity.
-- Data must be treated as unadjusted/unknown unless Dhan explicitly confirms an adjustment basis.
-
 ### Phase 2 - Research source policy
 
 Status: COMPLETE
 
 Generalized retained-dataset backtesting from Angel One-specific filtering to an explicit `ApprovedResearchSourcePolicy`.
 
-Behavior:
-
 - Default policy remains Angel One-only.
-- Policy accepts only explicitly approved source names.
-- Policy accepts only broker-kind datasets.
-- Research use case remains mandatory.
-- Unknown providers fail closed.
 - Dhan is not enabled by default.
-- Dhan may be explicitly added to the policy only with its future historical adapter.
+- Dhan may be explicitly added to the policy only with its historical adapter.
 
 ### Phase 3 - Historical adapter
 
-Status: PENDING
+Status: COMPLETE
 
-- Add a Dhan historical-data-only transport client.
-- Implement `DhanHistoricalCandleProvider` behind `MarketDataProviderPort`.
-- Normalize Dhan responses into immutable `Candle` values.
-- Enable Dhan explicitly through `ApprovedResearchSourcePolicy`.
-- Use injectable transport in tests.
-- Do not implement order, account, position, WebSocket, scheduler, or cloud behavior.
+Added `DhanHistoricalCandleProvider` behind `MarketDataProviderPort`.
+
+- Added historical-only transport in `dhan_client.py`.
+- Added `DhanHistoricalCandleProvider` in `dhan_historical.py`.
+- Supports daily candles through `POST /charts/historical`.
+- Supports 1m, 5m, 15m, 25m, and 60m candles through `POST /charts/intraday`.
+- Enforces the 90-day intraday request limit.
+- Converts Dhan epoch-second timestamps to timezone-aware UTC timestamps.
+- Rejects malformed, duplicate, out-of-order, empty, OHLC-inconsistent, and negative-volume responses.
+- Retains raw-response SHA-256 provenance.
+- Uses injectable transport for deterministic network-free tests.
+- Contains no order, account, position, holdings, funds, WebSocket, scheduler, or cloud capability.
 
 ### Phase 4 - Dataset lineage
 
