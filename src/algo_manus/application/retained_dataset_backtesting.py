@@ -38,6 +38,12 @@ class ApprovedResearchSourcePolicy:
             source_kinds=frozenset({DataSourceKind.BROKER}),
         )
 
+    @classmethod
+    def for_dhan_research(cls) -> "ApprovedResearchSourcePolicy":
+        """Explicitly approve retained Dhan broker historical datasets."""
+
+        return cls.for_sources("dhan")
+
 
 @dataclass(frozen=True, slots=True)
 class RetainedDatasetBacktestRequest:
@@ -74,8 +80,9 @@ class RetainedDatasetBacktestService:
 
     The service accepts only broker/research datasets whose source is explicitly
     approved by ``ApprovedResearchSourcePolicy``.  The default policy preserves
-    the existing Angel One-only behavior.  Dhan becomes eligible only when it is
-    explicitly added to the approved-source policy.
+    the existing Angel One-only behavior.  Dhan becomes eligible only through
+    ``ApprovedResearchSourcePolicy.for_dhan_research()`` or an explicit policy
+    containing ``dhan``.
 
     The service validates a dataset before invoking the existing next-bar engine
     and pins its exact dataset id, raw-content hash and validation outcome in the

@@ -40,8 +40,7 @@ Status: COMPLETE
 Generalized retained-dataset backtesting from Angel One-specific filtering to an explicit `ApprovedResearchSourcePolicy`.
 
 - Default policy remains Angel One-only.
-- Dhan is not enabled by default.
-- Dhan may be explicitly added to the policy only with its historical adapter.
+- Unknown providers fail closed.
 
 ### Phase 3 - Historical adapter
 
@@ -75,10 +74,16 @@ Integrated Dhan historical datasets with the existing immutable SQLite dataset r
 
 ### Phase 5 - Retained backtesting
 
-Status: PENDING
+Status: COMPLETE
 
-- Allow explicitly approved Dhan datasets to flow through retained-dataset backtesting.
-- Pin dataset ID, raw-content hash, instrument snapshot, strategy version, parameters, and policy versions in the backtest manifest.
+Enabled explicitly approved Dhan datasets to flow through retained-dataset backtesting.
+
+- Added `ApprovedResearchSourcePolicy.for_dhan_research()`.
+- Default retained-backtest policy remains Angel One-only.
+- Dhan datasets are accepted only when the caller explicitly uses the Dhan research policy.
+- End-to-end tests cover Dhan data ingestion, immutable persistence, research validation, retained backtesting, experiment persistence, and manifest lineage.
+- Research manifests pin the exact Dhan dataset ID, raw-content SHA-256, information cutoff, and universe snapshot.
+- Tests use injected transport and make no network calls.
 
 ### Phase 6 - UI retrieval slice
 
