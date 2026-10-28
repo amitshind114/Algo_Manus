@@ -99,6 +99,49 @@ def local_retained_dataset_backtests():
     )
 
 
+def local_dhan_historical_panel(st: Any):
+    """Return a Dhan panel only when a retained Dhan master snapshot exists."""
+
+    from algo_manus.infrastructure.instruments.sqlite_repository import (
+        SqliteInstrumentSnapshotRepository,
+    )
+    from algo_manus.infrastructure.market_data.dhan_historical import (
+        DhanHistoricalCandleProvider,
+    )
+    from algo_manus.infrastructure.market_data.sqlite_repository import (
+        SqliteCandleDatasetRepository,
+    )
+    from algo_manus.ui.dhan_historical import DhanHistoricalPanel
+
+    data_root = local_data_root()
+    snapshot = SqliteInstrumentSnapshotRepository(
+        data_root / "instrument_master.sqlite3"
+    ).latest("dhan")
+    if snapshot is None:
+        st.session_state.pop("dhan_historical_panel", None)
+        return None
+    cached = st.session_state.get("dhan_historical_panel")
+    if cached is None or cached.instrument_snapshot_id != snapshot.snapshot_id:
+        panel = DhanHistoricalPanel(
+            provider=DhanHistoricalCandleProvider.from_environment(),
+            repository=SqliteCandleDatasetRepository(data_root / "market_data.sqlite3"),
+            instrument_snapshot=snapshot,
+        )
+        st.session_state["dhan_historical_panel"] = _DhanPanelHandle(
+            panel=panel,
+            instrument_snapshot_id=snapshot.snapshot_id,
+        )
+    return st.session_state["dhan_historical_panel"].panel
+
+
+class _DhanPanelHandle:
+    """Small session cache record that invalidates when the local master changes."""
+
+    def __init__(self, *, panel: Any, instrument_snapshot_id: str) -> None:
+        self.panel = panel
+        self.instrument_snapshot_id = instrument_snapshot_id
+
+
 def local_risk_controls():
     """Return the durable local-only risk-control service."""
 

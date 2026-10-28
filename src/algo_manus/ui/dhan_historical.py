@@ -69,6 +69,11 @@ class DhanHistoricalPanel:
     def configuration_message(self) -> str:
         return self._provider.configuration_message
 
+    @property
+    def active_instruments(self):
+        """Return active instruments from the immutable selected snapshot."""
+        return self._instrument_snapshot.active_instruments
+
     def retrieve(self, form: DhanRetrievalForm, *, retrieved_at: datetime) -> dict[str, Any]:
         """Perform one explicit, bounded research-only retrieval."""
 
@@ -130,10 +135,20 @@ def render_dhan_historical_panel(st: Any, panel: DhanHistoricalPanel) -> None:
     else:
         st.warning(panel.configuration_message)
 
+    active_instruments = tuple(panel.active_instruments)
+    if not active_instruments:
+        st.warning("The selected Dhan instrument snapshot has no active instruments.")
+        return
+
     left, middle, right = st.columns(3)
-    instrument_id = left.text_input(
-        "Validated Dhan canonical instrument ID",
-        value="DHAN:NSE:NSE_EQ:1333",
+    instrument_id = left.selectbox(
+        "Validated Dhan instrument",
+        [item.instrument_id for item in active_instruments],
+        format_func=lambda selected_id: next(
+            f"{item.trading_symbol} · {item.exchange} · {item.segment} · token {item.broker_token}"
+            for item in active_instruments
+            if item.instrument_id == selected_id
+        ),
         key="dhan_instrument_id",
     )
     interval = middle.selectbox(

@@ -7,18 +7,19 @@ import json
 import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
-
 from algo_manus.application.leaderboard import LeaderboardSort
-
-NAV_ITEMS = (
-    ("Home", "Overview"),
-    ("Data & instruments", "Data & instruments"),
-    ("Backtesting", "Backtesting"),
-    ("Multi-test leaderboard", "Multi-test leaderboard"),
-    ("Strategies", "Strategies"),
-    ("Reporting", "Reporting"),
-    ("Risk & paper", "Risk & paper"),
+from algo_manus.ui.navigation import NAV_ITEMS, render_sidebar_navigation
+from algo_manus.ui.runtime import (
+    initialize_workbench_state,
+    local_authenticated_historical_source as shared_local_authenticated_historical_source,
+    local_data_root as shared_local_data_root,
+    local_paper_ledger as shared_local_paper_ledger,
+    local_public_instrument_source as shared_local_public_instrument_source,
+    local_retained_dataset_backtests as shared_local_retained_dataset_backtests,
+    local_risk_controls as shared_local_risk_controls,
+    local_dhan_historical_panel as shared_local_dhan_historical_panel,
 )
+from algo_manus.ui.theme import apply_workbench_style, render_header
 
 def leaderboard_sort_options() -> dict[str, LeaderboardSort]:
     """Keep the KPI sort mapping importable and testable outside Streamlit."""
@@ -36,18 +37,19 @@ def run_workbench(st) -> None:
 
     from algo_manus.application.demo_workbench import FixtureWorkbenchService
     from algo_manus.application.local_event_bus import LocalEventBus
-    _style(st)
+    apply_workbench_style(st)
     if "local_event_bus" not in st.session_state:
         st.session_state["local_event_bus"] = LocalEventBus()
-    service = FixtureWorkbenchService(_local_data_root(), event_bus=st.session_state["local_event_bus"])
-    public_instrument_source = _local_public_instrument_source()
-    historical_candle_source, angel_session = _local_authenticated_historical_source(st)
-    retained_dataset_backtests = _local_retained_dataset_backtests()
-    control_service = _local_risk_controls()
-    paper_ledger = _local_paper_ledger()
+    service = FixtureWorkbenchService(shared_local_data_root(), event_bus=st.session_state["local_event_bus"])
+    public_instrument_source = shared_local_public_instrument_source()
+    historical_candle_source, angel_session = shared_local_authenticated_historical_source(st)
+    dhan_historical_panel = shared_local_dhan_historical_panel(st)
+    retained_dataset_backtests = shared_local_retained_dataset_backtests()
+    control_service = shared_local_risk_controls()
+    paper_ledger = shared_local_paper_ledger()
     instruments = service.instruments()
     by_id = {item.instrument_id: item for item in instruments}
-    _state(st, tuple(by_id), service.recent_experiments())
+    initialize_workbench_state(st, instrument_ids=tuple(by_id), persisted_history=service.recent_experiments())
 
     with st.sidebar:
         st.markdown("## Algo Manus")
@@ -55,7 +57,7 @@ def run_workbench(st) -> None:
         st.info("LOCAL RESEARCH • PAPER ONLY")
         st.caption("Sample datasets are active where shown. They are not broker data, live market data, or investment recommendations.")
         st.divider()
-        page = _sidebar_navigation(st)
+        page = render_sidebar_navigation(st)
         st.divider()
         st.metric("Selected securities", len(st.session_state.selected_ids))
         st.metric("Saved local experiments", len(st.session_state.history))
@@ -84,6 +86,7 @@ def run_workbench(st) -> None:
             public_instrument_source,
             historical_candle_source,
             angel_session,
+            dhan_historical_panel,
         )
     elif page == "Backtesting":
         _research_lab(st, service, instruments, by_id, pd, retained_dataset_backtests)
@@ -222,9 +225,7 @@ def _style(st) -> None:
 
 
 def _header(st, title: str, subtitle: str) -> None:
-    st.markdown('<div class="kicker">ALGO MANUS / RESEARCH WORKBENCH</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
-    st.caption(subtitle)
+    render_header(st, title, subtitle)
 
 
 def _overview(st, service, pd) -> None:
@@ -499,6 +500,7 @@ def _data_and_instruments(
     public_instrument_source,
     historical_candle_source,
     angel_session,
+    dhan_historical_panel,
 ) -> None:
     from algo_manus.application.instrument_lifecycle import InstrumentLifecycleReadService
 
@@ -581,6 +583,8 @@ def _data_and_instruments(
     st.divider()
     _historical_candle_panel(st, pd, public_instrument_source, historical_candle_source, angel_session)
     st.divider()
+    _dhan_historical_panel(st, dhan_historical_panel)
+    st.divider()
     _dataset_review_panel(st, service, instruments, by_id, pd)
     st.divider()
     st.subheader("Research sample universe")
@@ -611,6 +615,24 @@ def _data_and_instruments(
     )
     st.session_state.selected_ids = tuple(chosen)
     st.caption("This sample universe remains separate until approved historical data is retained and validated. The retained Angel master above never silently replaces the selected research universe.")
+
+
+def _dhan_historical_panel(st, panel) -> None:
+    """Render Dhan historical retrieval only over a retained local master snapshot."""
+
+    from algo_manus.ui.dhan_historical import render_dhan_historical_panel
+
+    if panel is None:
+        st.subheader("Dhan historical candles")
+        st.info(
+            "No retained Dhan instrument-master snapshot is available. "
+            "Dhan historical retrieval remains unavailable until a validated local Dhan snapshot is retained."
+        )
+        st.caption(
+            "This workbench does not accept free-text Dhan security IDs and does not download a Dhan master during page render."
+        )
+        return
+    render_dhan_historical_panel(st, panel)
 
 
 def _dataset_review_panel(st, service, instruments, by_id, pd) -> None:
