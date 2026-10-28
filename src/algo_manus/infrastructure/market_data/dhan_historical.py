@@ -24,9 +24,12 @@ from algo_manus.domain.market_data import (
 from algo_manus.infrastructure.market_data.dhan_client import (
     DHAN_DAILY_CANDLE_URI,
     DHAN_INTRADAY_CANDLE_URI,
+    DhanRateLimitTransportError,
+    DhanTransportError,
     _Transport,
     post_json,
 )
+from zoneinfo import ZoneInfo
 
 _SUPPORTED_SEGMENTS = frozenset(
     {
@@ -50,6 +53,10 @@ class DhanHistoricalConfigurationError(ValueError):
 
 class DhanHistoricalRequestError(ValueError):
     """Raised when Dhan returns a transport, authentication, or provider failure."""
+
+
+class DhanHistoricalRateLimitError(DhanHistoricalRequestError):
+    """Raised when Dhan rejects a request because of a rate limit."""
 
 
 class DhanHistoricalResponseError(ValueError):
@@ -162,11 +169,24 @@ class DhanHistoricalCandleProvider:
             "fromDate": self._format_daily_bound(start) if is_daily else self._format_intraday_bound(start),
             "toDate": self._format_daily_bound(end) if is_daily else self._format_intraday_bound(end),
         }
-        raw_content = self._transport(
-            uri,
-            json.dumps(payload, separators=(",", ":")).encode("utf-8"),
-            self._headers(),
-        )
+        try:
+            raw_content = self._transport(
+                uri,
+                json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+                self._headers(),
+            )
+        except DhanRateLimitTransportError as exc:
+            raise DhanHistoricalRateLimitError(
+                "Dhan historical-data rate limit reached; retry manually later"
+            ) from exc
+        except DhanTransportError as exc:
+            raise DhanHistoricalRequestError(
+                "Dhan historical-data transport request failed"
+            ) from exc
+        except (TimeoutError, OSError) as exc:
+            raise DhanHistoricalRequestError(
+                "Dhan historical-data transport request failed"
+            ) from exc
         candles = self._parse_response(raw_content)
         return CandleDataset.create(
             instrument_id=instrument_id,
@@ -194,11 +214,14 @@ class DhanHistoricalCandleProvider:
     @staticmethod
     def _parse_instrument_id(instrument_id: str) -> tuple[str, str]:
         parts = instrument_id.split(":")
-        if len(parts) != 3 or parts[0] != "DHAN":
+        if len(parts) == 4 and parts[0] == "DHAN":
+            _, _, segment, security_id = parts
+        elif len(parts) == 3 and parts[0] == "DHAN":
+            _, segment, security_id = parts
+        else:
             raise DhanHistoricalInstrumentError(
-                "Dhan historical data requires a DHAN:<segment>:<security_id> identity"
+                "Dhan historical data requires a DHAN:<exchange>:<segment>:<security_id> identity"
             )
-        segment, security_id = parts[1:]
         if segment not in _SUPPORTED_SEGMENTS or not security_id.strip():
             raise DhanHistoricalInstrumentError(
                 "Dhan canonical instrument identity has an unsupported segment or security ID"
@@ -207,11 +230,11 @@ class DhanHistoricalCandleProvider:
 
     @staticmethod
     def _format_daily_bound(value: datetime) -> str:
-        return value.astimezone(timezone.utc).strftime("%Y-%m-%d")
+        return value.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d")
 
     @staticmethod
     def _format_intraday_bound(value: datetime) -> str:
-        return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        return value.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def _parse_response(raw_content: bytes) -> tuple[Candle, ...]:
@@ -223,6 +246,15 @@ class DhanHistoricalCandleProvider:
             ) from exc
         if not isinstance(response, dict):
             raise DhanHistoricalResponseError("Dhan historical response must be an object")
+        if response.get("status") is False or response.get("errorCode") or response.get("errorcode"):
+            code = str(response.get("errorCode") or response.get("errorcode") or "unknown_error")
+            if code in {"DH-904", "904", "429"}:
+                raise DhanHistoricalRateLimitError(
+                    "Dhan historical-data rate limit response"
+                )
+            raise DhanHistoricalRequestError(
+                f"Dhan historical-data request rejected: {code}"
+            )
 
         required_arrays = ("open", "high", "low", "close", "volume", "timestamp")
         arrays: dict[str, list[object]] = {}

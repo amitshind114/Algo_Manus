@@ -9,12 +9,16 @@ from algo_manus.domain.market_data import DataSourceKind, DataUseCase
 from algo_manus.infrastructure.market_data.dhan_client import (
     DHAN_DAILY_CANDLE_URI,
     DHAN_INTRADAY_CANDLE_URI,
+    DhanRateLimitTransportError,
+    DhanTransportError,
 )
 from algo_manus.infrastructure.market_data.dhan_historical import (
     DhanHistoricalCandleProvider,
     DhanHistoricalConfigurationError,
     DhanHistoricalInstrumentError,
     DhanHistoricalIntervalError,
+    DhanHistoricalRateLimitError,
+    DhanHistoricalRequestError,
     DhanHistoricalResponseError,
     DhanHistoricalWindowError,
 )
@@ -81,6 +85,8 @@ class DhanHistoricalCandleProviderTests(unittest.TestCase):
         self.assertEqual(request["securityId"], "1333")
         self.assertEqual(request["exchangeSegment"], "NSE_EQ")
         self.assertEqual(request["interval"], "5m")
+        self.assertEqual(request["fromDate"], "2026-08-03 14:45:00")
+        self.assertEqual(request["toDate"], "2026-08-08 14:45:00")
         self.assertEqual(dataset.provenance.source_name, "dhan")
         self.assertEqual(dataset.provenance.source_kind, DataSourceKind.BROKER)
         self.assertEqual(len(dataset.candles), 2)
@@ -203,6 +209,60 @@ class DhanHistoricalCandleProviderTests(unittest.TestCase):
                 end=self.end,
                 retrieved_at=self.retrieved_at,
             )
+
+    def test_normalizes_provider_rate_limit_error_without_response_body(self) -> None:
+        def transport(uri: str, body: bytes, headers: dict[str, str]) -> bytes:
+            raise DhanRateLimitTransportError("internal provider detail with token")
+
+        provider = DhanHistoricalCandleProvider(
+            credentials=self.credentials,
+            transport=transport,
+        )
+        with self.assertRaisesRegex(DhanHistoricalRateLimitError, "retry manually") as raised:
+            provider.fetch_candles(
+                instrument_id="DHAN:NSE_EQ:1333",
+                interval="5m",
+                start=self.start,
+                end=self.end,
+                retrieved_at=self.retrieved_at,
+            )
+        self.assertNotIn("token", str(raised.exception))
+
+    def test_normalizes_transport_error_without_secret_details(self) -> None:
+        def transport(uri: str, body: bytes, headers: dict[str, str]) -> bytes:
+            raise DhanTransportError("internal provider detail with token")
+
+        provider = DhanHistoricalCandleProvider(
+            credentials=self.credentials,
+            transport=transport,
+        )
+        with self.assertRaises(DhanHistoricalRequestError) as raised:
+            provider.fetch_candles(
+                instrument_id="DHAN:NSE_EQ:1333",
+                interval="5m",
+                start=self.start,
+                end=self.end,
+                retrieved_at=self.retrieved_at,
+            )
+        self.assertNotIn("token", str(raised.exception))
+
+    def test_normalizes_provider_error_code_without_raw_response(self) -> None:
+        provider, _ = self._provider(
+            {
+                "status": False,
+                "errorCode": "DH-905",
+                "message": "token must not be shown",
+            }
+        )
+        with self.assertRaisesRegex(DhanHistoricalRequestError, "DH-905") as raised:
+            provider.fetch_candles(
+                instrument_id="DHAN:NSE_EQ:1333",
+                interval="5m",
+                start=self.start,
+                end=self.end,
+                retrieved_at=self.retrieved_at,
+            )
+        self.assertNotIn("token must not be shown", str(raised.exception))
 
 
 if __name__ == "__main__":

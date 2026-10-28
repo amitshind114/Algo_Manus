@@ -13,6 +13,7 @@ from typing import Any
 
 from algo_manus.application.market_data import MarketDataRequest, MarketDataService
 from algo_manus.domain.market_data import DataUseCase
+from algo_manus.domain.instruments import InstrumentMasterSnapshot, InstrumentStatus
 from algo_manus.infrastructure.market_data.dhan_historical import DhanHistoricalCandleProvider
 from algo_manus.infrastructure.market_data.sqlite_repository import SqliteCandleDatasetRepository
 
@@ -40,6 +41,10 @@ class DhanRetrievalForm:
             raise ValueError("Dhan intraday requests are limited to 90 days")
 
 
+class DhanInstrumentSelectionError(ValueError):
+    """Raised when a request is not backed by an active Dhan master record."""
+
+
 class DhanHistoricalPanel:
     """Compose the Dhan historical-data retrieval workflow for Streamlit."""
 
@@ -48,9 +53,11 @@ class DhanHistoricalPanel:
         *,
         provider: DhanHistoricalCandleProvider,
         repository: SqliteCandleDatasetRepository,
+        instrument_snapshot: InstrumentMasterSnapshot,
     ) -> None:
         self._provider = provider
         self._service = MarketDataService(repository)
+        self._instrument_snapshot = instrument_snapshot
 
     @property
     def configuration_status(self) -> str:
@@ -64,6 +71,23 @@ class DhanHistoricalPanel:
 
     def retrieve(self, form: DhanRetrievalForm, *, retrieved_at: datetime) -> dict[str, Any]:
         """Perform one explicit, bounded research-only retrieval."""
+
+        if self._instrument_snapshot.broker.lower() != "dhan":
+            raise DhanInstrumentSelectionError(
+                "historical retrieval requires a Dhan instrument snapshot"
+            )
+        selected = next(
+            (
+                instrument
+                for instrument in self._instrument_snapshot.active_instruments
+                if instrument.instrument_id == form.instrument_id
+            ),
+            None,
+        )
+        if selected is None or selected.status is not InstrumentStatus.ACTIVE:
+            raise DhanInstrumentSelectionError(
+                "instrument is not present as an active record in the selected Dhan snapshot"
+            )
 
         dataset = self._service.ingest(
             self._provider,
@@ -108,8 +132,8 @@ def render_dhan_historical_panel(st: Any, panel: DhanHistoricalPanel) -> None:
 
     left, middle, right = st.columns(3)
     instrument_id = left.text_input(
-        "Dhan canonical instrument ID",
-        value="DHAN:NSE_EQ:1333",
+        "Validated Dhan canonical instrument ID",
+        value="DHAN:NSE:NSE_EQ:1333",
         key="dhan_instrument_id",
     )
     interval = middle.selectbox(

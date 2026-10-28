@@ -6,9 +6,11 @@ import tempfile
 from pathlib import Path
 import unittest
 
+from algo_manus.domain.instruments import Instrument, InstrumentMasterSnapshot, InstrumentType
 from algo_manus.infrastructure.market_data.dhan_historical import DhanHistoricalCandleProvider
 from algo_manus.infrastructure.market_data.sqlite_repository import SqliteCandleDatasetRepository
 from algo_manus.ui.dhan_historical import (
+    DhanInstrumentSelectionError,
     DhanHistoricalPanel,
     DhanRetrievalForm,
     SUPPORTED_INTERVALS,
@@ -48,11 +50,32 @@ class DhanHistoricalPanelTests(unittest.TestCase):
             transport=transport,
         )
         repository = SqliteCandleDatasetRepository(self.database_path)
-        return DhanHistoricalPanel(provider=provider, repository=repository)
+        snapshot = InstrumentMasterSnapshot.create(
+            broker="dhan",
+            source_uri="fixture://dhan/instrument-master",
+            raw_content=b"dhan-master-v1",
+            downloaded_at=self.retrieved_at,
+            instruments=(
+                Instrument(
+                    broker="dhan",
+                    exchange="NSE",
+                    segment="NSE_EQ",
+                    broker_token="1333",
+                    trading_symbol="RELIANCE",
+                    display_name="Reliance Industries",
+                    instrument_type=InstrumentType.EQUITY,
+                ),
+            ),
+        )
+        return DhanHistoricalPanel(
+            provider=provider,
+            repository=repository,
+            instrument_snapshot=snapshot,
+        )
 
     def _form(self) -> DhanRetrievalForm:
         return DhanRetrievalForm(
-            instrument_id="DHAN:NSE_EQ:1333",
+            instrument_id="DHAN:NSE:NSE_EQ:1333",
             interval="5m",
             start=self.start,
             end=self.end,
@@ -72,7 +95,7 @@ class DhanHistoricalPanelTests(unittest.TestCase):
         panel = self._panel()
         result = panel.retrieve(self._form(), retrieved_at=self.retrieved_at)
 
-        self.assertEqual(result["instrument_id"], "DHAN:NSE_EQ:1333")
+        self.assertEqual(result["instrument_id"], "DHAN:NSE:NSE_EQ:1333")
         self.assertEqual(result["source_name"], "dhan")
         self.assertEqual(result["source_kind"], "BROKER")
         self.assertEqual(result["use_case"], "RESEARCH")
@@ -106,6 +129,19 @@ class DhanHistoricalPanelTests(unittest.TestCase):
                 interval="5m",
                 start=datetime(2026, 8, 3),
                 end=datetime(2026, 8, 8),
+            )
+
+    def test_rejects_instrument_not_in_selected_snapshot(self) -> None:
+        panel = self._panel()
+        with self.assertRaises(DhanInstrumentSelectionError):
+            panel.retrieve(
+                DhanRetrievalForm(
+                    instrument_id="DHAN:NSE:NSE_EQ:9999",
+                    interval="5m",
+                    start=self.start,
+                    end=self.end,
+                ),
+                retrieved_at=self.retrieved_at,
             )
 
 
