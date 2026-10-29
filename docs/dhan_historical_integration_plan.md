@@ -28,7 +28,7 @@ Confirmed from official DhanHQ v2 documentation:
 - Intraday endpoint: `POST /charts/intraday`
 - Authentication header: `access-token`
 - Intraday intervals: 1, 5, 15, 25, and 60 minutes
-- Intraday maximum window: 90 days
+- Intraday availability: up to 5 years, with a 90-day maximum local request chunk
 - Timestamps: Unix epoch seconds
 - Data API rate limit: 5 requests per second
 - Supported segments: `IDX_I`, `NSE_EQ`, `NSE_FNO`, `NSE_CURRENCY`, `BSE_EQ`, `MCX_COMM`, `BSE_CURRENCY`, `BSE_FNO`
@@ -52,10 +52,11 @@ Added `DhanHistoricalCandleProvider` behind `MarketDataProviderPort`.
 - Added `DhanHistoricalCandleProvider` in `dhan_historical.py`.
 - Supports daily candles through `POST /charts/historical`.
 - Supports 1m, 5m, 15m, 25m, and 60m candles through `POST /charts/intraday`.
-- Enforces the 90-day intraday request limit.
+- Splits one explicit retrieval spanning more than 90 days into sequential, non-overlapping 90-day requests.
+- Sends documented `instrument` and `oi` fields; currently maps only supported equity segments to `EQUITY` and fails closed for unsupported mappings.
 - Converts Dhan epoch-second timestamps to timezone-aware UTC timestamps.
 - Rejects malformed, duplicate, out-of-order, empty, OHLC-inconsistent, and negative-volume responses.
-- Retains raw-response SHA-256 provenance.
+- Validates combined chunks for strict chronological ordering and no duplicates, then retains a SHA-256 over concatenated raw chunk responses.
 - Uses injectable transport for deterministic network-free tests.
 - Contains no order, account, position, holdings, funds, WebSocket, scheduler, or cloud capability.
 
@@ -94,6 +95,7 @@ Added an isolated, reusable Streamlit panel in `ui/dhan_historical.py`.
 - Shows display-safe Dhan configuration status.
 - Supports manual selection of canonical Dhan instrument ID, interval, and UTC date range.
 - Requires an explicit Fetch historical candles button.
+- Allows a user-selected intraday range up to the documented five-year availability; the provider performs the 90-day chunking within that one explicit action.
 - Never retrieves during Streamlit page render.
 - Persists retrieved data through `MarketDataService` and the immutable SQLite dataset repository.
 - Displays only safe dataset metadata and named errors.

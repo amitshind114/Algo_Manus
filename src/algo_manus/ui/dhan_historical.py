@@ -18,7 +18,7 @@ from algo_manus.infrastructure.market_data.dhan_historical import DhanHistorical
 from algo_manus.infrastructure.market_data.sqlite_repository import SqliteCandleDatasetRepository
 
 SUPPORTED_INTERVALS = ("1d", "1m", "5m", "15m", "25m", "60m")
-MAX_INTRADAY_WINDOW = timedelta(days=90)
+MAX_INTRADAY_AVAILABILITY = timedelta(days=365 * 5 + 2)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,8 +37,11 @@ class DhanRetrievalForm:
             raise ValueError("Request bounds must be timezone-aware")
         if self.start >= self.end:
             raise ValueError("Start must be earlier than end")
-        if self.interval != "1d" and self.end - self.start > MAX_INTRADAY_WINDOW:
-            raise ValueError("Dhan intraday requests are limited to 90 days")
+        if (
+            self.interval != "1d"
+            and self.end - self.start > MAX_INTRADAY_AVAILABILITY
+        ):
+            raise ValueError("Dhan intraday history is limited to five years")
 
 
 class DhanInstrumentSelectionError(ValueError):

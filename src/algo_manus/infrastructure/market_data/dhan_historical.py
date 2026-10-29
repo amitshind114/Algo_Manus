@@ -1,7 +1,7 @@
 """Read-only Dhan historical-candle adapter.
 
 This adapter implements the existing provider-neutral market-data port for
-Dhan historical daily and intraday candles.  It intentionally does not access
+Dhan historical daily and intraday candles. It intentionally does not access
 account data, positions, holdings, funds, order endpoints, live market feeds,
 WebSockets, schedulers, or any execution capability.
 """
@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import os
+from zoneinfo import ZoneInfo
 
 from algo_manus.domain.market_data import (
     Candle,
@@ -29,22 +30,10 @@ from algo_manus.infrastructure.market_data.dhan_client import (
     _Transport,
     post_json,
 )
-from zoneinfo import ZoneInfo
 
-_SUPPORTED_SEGMENTS = frozenset(
-    {
-        "IDX_I",
-        "NSE_EQ",
-        "NSE_FNO",
-        "NSE_CURRENCY",
-        "BSE_EQ",
-        "BSE_CURRENCY",
-        "BSE_FNO",
-        "MCX_COMM",
-    }
-)
-_INTRADAY_INTERVALS = frozenset({"1m", "5m", "15m", "25m", "60m"})
-_INTRADAY_MAX_WINDOW = timedelta(days=90)
+_EQUITY_SEGMENTS = frozenset({"NSE_EQ", "BSE_EQ"})
+_DHAN_INTERVALS = {"1m": 1, "5m": 5, "15m": 15, "25m": 25, "60m": 60}
+_INTRADAY_MAX_REQUEST_WINDOW = timedelta(days=90)
 
 
 class DhanHistoricalConfigurationError(ValueError):
@@ -71,10 +60,6 @@ class DhanHistoricalIntervalError(ValueError):
     """Raised when an interval is unsupported by the Dhan historical adapter."""
 
 
-class DhanHistoricalWindowError(ValueError):
-    """Raised when an intraday request exceeds Dhan's documented 90-day limit."""
-
-
 @dataclass(frozen=True, slots=True)
 class DhanHistoricalCredentials:
     """Secret values supplied only by user-managed local environment configuration."""
@@ -91,9 +76,14 @@ class DhanHistoricalCredentials:
 class DhanHistoricalCandleProvider:
     """Normalize documented Dhan historical candles behind MarketDataProviderPort.
 
-    The adapter accepts a user-managed Dhan access token only.  It does not know
+    Dhan exposes up to five years of intraday history, but each request is
+    locally bounded to 90 days to keep response sizes manageable. A single
+    explicit ``fetch_candles`` action may therefore issue sequential 90-day
+    requests. There is no scheduler, background work, retry, or silent resume.
+
+    The adapter accepts a user-managed Dhan access token only. It does not know
     or use client PIN, TOTP, order endpoints, account endpoints, positions,
-    holdings, funds, live feeds, or WebSockets.  ``transport`` is injectable
+    holdings, funds, live feeds, or WebSockets. ``transport`` is injectable
     exclusively for deterministic tests.
     """
 
@@ -126,9 +116,7 @@ class DhanHistoricalCandleProvider:
 
     @property
     def configuration_message(self) -> str:
-        return self._configuration_error or (
-            "ALGO_MANUS_DHAN_ACCESS_TOKEN is required"
-        )
+        return self._configuration_error or "ALGO_MANUS_DHAN_ACCESS_TOKEN is required"
 
     def fetch_candles(
         self,
@@ -139,7 +127,7 @@ class DhanHistoricalCandleProvider:
         end: datetime,
         retrieved_at: datetime,
     ) -> CandleDataset:
-        """Fetch one bounded, research-only historical-candle response."""
+        """Fetch and combine one explicit, bounded research-only retrieval."""
 
         if not self.credentials_configured:
             raise DhanHistoricalConfigurationError(self.configuration_message)
@@ -152,25 +140,84 @@ class DhanHistoricalCandleProvider:
 
         segment, security_id = self._parse_instrument_id(instrument_id)
         is_daily = interval == "1d"
-        if not is_daily and interval not in _INTRADAY_INTERVALS:
+        if not is_daily and interval not in _DHAN_INTERVALS:
             raise DhanHistoricalIntervalError(
                 f"unsupported Dhan historical interval {interval!r}"
             )
-        if not is_daily and end - start > _INTRADAY_MAX_WINDOW:
-            raise DhanHistoricalWindowError(
-                "Dhan intraday historical requests are limited to 90 days per request"
-            )
+        instrument = self._instrument_for_segment(segment)
+        ranges = (
+            ((start, end),)
+            if is_daily
+            else tuple(self._intraday_ranges(start, end))
+        )
 
+        raw_chunks: list[bytes] = []
+        combined: list[Candle] = []
+        previous_timestamp: datetime | None = None
+        for chunk_start, chunk_end in ranges:
+            raw_content = self._request_chunk(
+                segment=segment,
+                security_id=security_id,
+                instrument=instrument,
+                interval=interval,
+                start=chunk_start,
+                end=chunk_end,
+                is_daily=is_daily,
+            )
+            candles = self._parse_response(raw_content)
+            if previous_timestamp is not None and candles[0].timestamp <= previous_timestamp:
+                raise DhanHistoricalResponseError(
+                    "Dhan historical chunks overlap or are not strictly chronological"
+                )
+            raw_chunks.append(raw_content)
+            combined.extend(candles)
+            previous_timestamp = candles[-1].timestamp
+
+        return CandleDataset.create(
+            instrument_id=instrument_id,
+            interval=interval,
+            provenance=DataProvenance(
+                source_name=self.source_name,
+                source_kind=self.source_kind,
+                source_uri=DHAN_DAILY_CANDLE_URI if is_daily else DHAN_INTRADAY_CANDLE_URI,
+                retrieved_at=retrieved_at,
+                raw_content_sha256=sha256(b"".join(raw_chunks)).hexdigest(),
+                adjustment_basis="unadjusted/unknown broker historical candles",
+                use_case=DataUseCase.RESEARCH,
+            ),
+            candles=tuple(combined),
+        )
+
+    def _request_chunk(
+        self,
+        *,
+        segment: str,
+        security_id: str,
+        instrument: str,
+        interval: str,
+        start: datetime,
+        end: datetime,
+        is_daily: bool,
+    ) -> bytes:
         uri = DHAN_DAILY_CANDLE_URI if is_daily else DHAN_INTRADAY_CANDLE_URI
         payload = {
             "securityId": security_id,
             "exchangeSegment": segment,
-            "interval": interval if not is_daily else "1",
-            "fromDate": self._format_daily_bound(start) if is_daily else self._format_intraday_bound(start),
-            "toDate": self._format_daily_bound(end) if is_daily else self._format_intraday_bound(end),
+            "instrument": instrument,
+            "oi": False,
+            "fromDate": self._format_daily_bound(start)
+            if is_daily
+            else self._format_intraday_bound(start),
+            "toDate": self._format_daily_bound(end)
+            if is_daily
+            else self._format_intraday_bound(end),
         }
+        if is_daily:
+            payload["expiryCode"] = 0
+        else:
+            payload["interval"] = _DHAN_INTERVALS[interval]
         try:
-            raw_content = self._transport(
+            return self._transport(
                 uri,
                 json.dumps(payload, separators=(",", ":")).encode("utf-8"),
                 self._headers(),
@@ -187,21 +234,26 @@ class DhanHistoricalCandleProvider:
             raise DhanHistoricalRequestError(
                 "Dhan historical-data transport request failed"
             ) from exc
-        candles = self._parse_response(raw_content)
-        return CandleDataset.create(
-            instrument_id=instrument_id,
-            interval=interval,
-            provenance=DataProvenance(
-                source_name=self.source_name,
-                source_kind=self.source_kind,
-                source_uri=uri,
-                retrieved_at=retrieved_at,
-                raw_content_sha256=sha256(raw_content).hexdigest(),
-                adjustment_basis="unadjusted/unknown broker historical candles",
-                use_case=DataUseCase.RESEARCH,
-            ),
-            candles=candles,
-        )
+
+    @staticmethod
+    def _intraday_ranges(
+        start: datetime, end: datetime
+    ) -> list[tuple[datetime, datetime]]:
+        ranges: list[tuple[datetime, datetime]] = []
+        chunk_start = start
+        while chunk_start < end:
+            chunk_end = min(chunk_start + _INTRADAY_MAX_REQUEST_WINDOW, end)
+            ranges.append((chunk_start, chunk_end))
+            chunk_start = chunk_end
+        return ranges
+
+    @staticmethod
+    def _instrument_for_segment(segment: str) -> str:
+        if segment not in _EQUITY_SEGMENTS:
+            raise DhanHistoricalInstrumentError(
+                "Dhan historical adapter currently supports only NSE_EQ and BSE_EQ equity instruments"
+            )
+        return "EQUITY"
 
     def _headers(self) -> dict[str, str]:
         assert self._credentials is not None
@@ -222,9 +274,9 @@ class DhanHistoricalCandleProvider:
             raise DhanHistoricalInstrumentError(
                 "Dhan historical data requires a DHAN:<exchange>:<segment>:<security_id> identity"
             )
-        if segment not in _SUPPORTED_SEGMENTS or not security_id.strip():
+        if not segment.strip() or not security_id.strip():
             raise DhanHistoricalInstrumentError(
-                "Dhan canonical instrument identity has an unsupported segment or security ID"
+                "Dhan canonical instrument identity requires a segment and security ID"
             )
         return segment, security_id
 
@@ -246,9 +298,15 @@ class DhanHistoricalCandleProvider:
             ) from exc
         if not isinstance(response, dict):
             raise DhanHistoricalResponseError("Dhan historical response must be an object")
-        if response.get("status") is False or response.get("errorCode") or response.get("errorcode"):
+        status = response.get("status")
+        if (
+            status is False
+            or status in ("failure", "FAILED")
+            or response.get("errorCode")
+            or response.get("errorcode")
+        ):
             code = str(response.get("errorCode") or response.get("errorcode") or "unknown_error")
-            if code in {"DH-904", "904", "429"}:
+            if code in {"DH-904", "904", "805", "429"}:
                 raise DhanHistoricalRateLimitError(
                     "Dhan historical-data rate limit response"
                 )
@@ -301,7 +359,9 @@ class DhanHistoricalCandleProvider:
                 raise DhanHistoricalResponseError(
                     f"Dhan historical candle {position} has non-positive OHLC values"
                 )
-            if high_price < max(open_price, close_price) or low_price > min(open_price, close_price):
+            if high_price < max(open_price, low_price, close_price) or low_price > min(
+                open_price, high_price, close_price
+            ):
                 raise DhanHistoricalResponseError(
                     f"Dhan historical candle {position} has inconsistent OHLC values"
                 )

@@ -20,7 +20,6 @@ from algo_manus.infrastructure.market_data.dhan_historical import (
     DhanHistoricalRateLimitError,
     DhanHistoricalRequestError,
     DhanHistoricalResponseError,
-    DhanHistoricalWindowError,
 )
 
 
@@ -56,6 +55,24 @@ class DhanHistoricalCandleProviderTests(unittest.TestCase):
         )
         return provider, transport
 
+    def _sequence_provider(self, payloads: list[dict]):
+        encoded_payloads = [json.dumps(payload).encode("utf-8") for payload in payloads]
+        calls: list[tuple[str, bytes, dict[str, str]]] = []
+
+        def transport(uri: str, body: bytes, headers: dict[str, str]) -> bytes:
+            calls.append((uri, body, headers))
+            return encoded_payloads[len(calls) - 1]
+
+        transport.calls = calls  # type: ignore[attr-defined]
+        return (
+            DhanHistoricalCandleProvider(
+                credentials=self.credentials,
+                transport=transport,
+            ),
+            transport,
+            encoded_payloads,
+        )
+
     def _valid_payload(self) -> dict:
         base = int(self.start.timestamp())
         return {
@@ -84,7 +101,9 @@ class DhanHistoricalCandleProviderTests(unittest.TestCase):
         request = json.loads(body)
         self.assertEqual(request["securityId"], "1333")
         self.assertEqual(request["exchangeSegment"], "NSE_EQ")
-        self.assertEqual(request["interval"], "5m")
+        self.assertEqual(request["instrument"], "EQUITY")
+        self.assertEqual(request["interval"], 5)
+        self.assertFalse(request["oi"])
         self.assertEqual(request["fromDate"], "2026-08-03 14:45:00")
         self.assertEqual(request["toDate"], "2026-08-08 14:45:00")
         self.assertEqual(dataset.provenance.source_name, "dhan")
@@ -110,6 +129,12 @@ class DhanHistoricalCandleProviderTests(unittest.TestCase):
         uri, _, _ = transport.calls[0]
         self.assertEqual(uri, DHAN_DAILY_CANDLE_URI)
 
+        request = json.loads(transport.calls[0][1])
+        self.assertEqual(request["instrument"], "EQUITY")
+        self.assertFalse(request["oi"])
+        self.assertEqual(request["expiryCode"], 0)
+        self.assertNotIn("interval", request)
+
     def test_missing_credentials_fail_before_transport(self) -> None:
         provider = DhanHistoricalCandleProvider(credentials=None)
         with self.assertRaises(DhanHistoricalConfigurationError):
@@ -133,15 +158,65 @@ class DhanHistoricalCandleProviderTests(unittest.TestCase):
             )
         self.assertEqual(transport.calls, [])
 
-    def test_rejects_intraday_window_over_ninety_days(self) -> None:
-        provider, transport = self._provider(self._valid_payload())
-        with self.assertRaises(DhanHistoricalWindowError):
+    def test_splits_long_intraday_window_into_sequential_ninety_day_chunks(self) -> None:
+        first_payload = self._valid_payload()
+        second_start = self.start + timedelta(days=90)
+        second_payload = {
+            "open": [110.0, 111.0],
+            "high": [112.0, 113.0],
+            "low": [109.0, 110.0],
+            "close": [111.0, 112.0],
+            "volume": [1200, 1300],
+            "timestamp": [int(second_start.timestamp()), int(second_start.timestamp()) + 300],
+        }
+        provider, transport, encoded = self._sequence_provider(
+            [first_payload, second_payload]
+        )
+
+        dataset = provider.fetch_candles(
+            instrument_id="DHAN:NSE_EQ:1333",
+            interval="5m",
+            start=self.start,
+            end=self.start + timedelta(days=95),
+            retrieved_at=self.start + timedelta(days=96),
+        )
+
+        self.assertEqual(len(transport.calls), 2)
+        first_request = json.loads(transport.calls[0][1])
+        second_request = json.loads(transport.calls[1][1])
+        self.assertEqual(first_request["fromDate"], "2026-08-03 14:45:00")
+        self.assertEqual(first_request["toDate"], "2026-11-01 14:45:00")
+        self.assertEqual(second_request["fromDate"], "2026-11-01 14:45:00")
+        self.assertEqual(second_request["toDate"], "2026-11-06 14:45:00")
+        self.assertEqual(len(dataset.candles), 4)
+        self.assertEqual(
+            dataset.provenance.raw_content_sha256,
+            sha256(b"".join(encoded)).hexdigest(),
+        )
+
+    def test_rejects_overlapping_chunk_responses(self) -> None:
+        first_payload = self._valid_payload()
+        second_payload = self._valid_payload()
+        provider, _, _ = self._sequence_provider([first_payload, second_payload])
+
+        with self.assertRaisesRegex(DhanHistoricalResponseError, "overlap"):
             provider.fetch_candles(
                 instrument_id="DHAN:NSE_EQ:1333",
                 interval="5m",
                 start=self.start,
-                end=self.start + timedelta(days=91),
-                retrieved_at=self.start + timedelta(days=92),
+                end=self.start + timedelta(days=95),
+                retrieved_at=self.start + timedelta(days=96),
+            )
+
+    def test_rejects_non_equity_segment_without_guessing_instrument_type(self) -> None:
+        provider, transport = self._provider(self._valid_payload())
+        with self.assertRaises(DhanHistoricalInstrumentError):
+            provider.fetch_candles(
+                instrument_id="DHAN:NSE_FNO:1333",
+                interval="5m",
+                start=self.start,
+                end=self.end,
+                retrieved_at=self.retrieved_at,
             )
         self.assertEqual(transport.calls, [])
 

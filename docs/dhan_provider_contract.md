@@ -25,13 +25,15 @@ Sources:
 | Token refresh behavior | CONFIRMED | No automatic refresh in Algo Manus; fail closed on authentication failure | Algo Manus safety boundary |
 | Security ID field | CONFIRMED | `securityId` | DhanHQ v2 Historical Data documentation |
 | Exchange segment field | CONFIRMED | `exchangeSegment` using Dhan segment enum | DhanHQ v2 Annexure |
+| Intraday instrument field | CONFIRMED | `instrument: EQUITY` for supported equity segments; unsupported mappings fail closed | DhanHQ v2 Historical Data documentation; Algo Manus adapter policy |
+| Open-interest field | CONFIRMED | `oi: false` for the current equity-only adapter | DhanHQ v2 Historical Data documentation; Algo Manus adapter policy |
 | Supported exchange segments | CONFIRMED | `IDX_I`, `NSE_EQ`, `NSE_FNO`, `NSE_CURRENCY`, `BSE_EQ`, `MCX_COMM`, `BSE_CURRENCY`, `BSE_FNO` | DhanHQ v2 Annexure |
 | Supported daily intervals | CONFIRMED | Daily only | DhanHQ v2 Historical Data documentation |
 | Supported intraday intervals | CONFIRMED | 1, 5, 15, 25, and 60 minutes | DhanHQ v2 Historical Data documentation |
 | Maximum intraday request window | CONFIRMED | 90 days per request | DhanHQ v2 Historical Data documentation |
 | Daily request bounds | CONFIRMED | `fromDate` inclusive; `toDate` non-inclusive; format `YYYY-MM-DD` | DhanHQ v2 Historical Data documentation |
 | Intraday request bounds | CONFIRMED | `fromDate` and `toDate`; IST datetime format such as `YYYY-MM-DD HH:MM:SS` | DhanHQ v2 Historical Data documentation |
-| Pagination or chunking behavior | CONFIRMED | No documented pagination; requests must be bounded to the documented 90-day intraday maximum | DhanHQ v2 Historical Data documentation |
+| Pagination or chunking behavior | CONFIRMED | No documented pagination; Algo Manus splits one explicit retrieval into sequential non-overlapping 90-day requests | DhanHQ v2 Historical Data documentation; Algo Manus adapter policy |
 | Timestamp timezone | CONFIRMED | Unix epoch seconds | DhanHQ v2 Historical Data documentation |
 | Candle timestamp semantics | CONFIRMED | Provider returns epoch-second timestamps; adapter converts to timezone-aware UTC and preserves provider timestamps | DhanHQ v2 Historical Data documentation |
 | OHLCV response fields | CONFIRMED | Parallel arrays: `open`, `high`, `low`, `close`, `volume`, `timestamp`; optional `open_interest` | DhanHQ v2 Historical Data documentation |
@@ -49,10 +51,11 @@ Sources:
 2. Use `POST /charts/intraday` for 1, 5, 15, 25, and 60-minute candles.
 3. Send the Dhan JWT in the `access-token` header.
 4. Map canonical Algo Manus instruments to Dhan `securityId` and `exchangeSegment` through an accepted local instrument snapshot.
-5. Reject requests exceeding the 90-day intraday limit.
-6. Convert epoch-second timestamps to timezone-aware UTC timestamps.
-7. Reject malformed, duplicate, out-of-order, empty, or OHLC-inconsistent responses.
-8. Reject negative volume and missing or invalid volume.
-9. Do not fill gaps, interpolate candles, or silently merge responses.
-10. Label data as unadjusted/unknown unless Dhan explicitly confirms an adjustment basis.
-11. Do not implement automatic retries, background retrieval, order APIs, account APIs, positions, holdings, funds, or WebSocket behavior.
+5. Accept up to five years of intraday history, splitting each explicit retrieval into sequential non-overlapping 90-day requests.
+6. Send `instrument: EQUITY` and `oi: false` for supported equity segments; fail closed for unsupported derivative, currency, commodity, and index mappings.
+7. Convert epoch-second timestamps to timezone-aware UTC timestamps.
+8. Reject malformed, duplicate, out-of-order, empty, or OHLC-inconsistent responses.
+9. Reject negative volume and missing or invalid volume.
+10. Validate combined chunk responses for strict chronological ordering and no duplicates; hash concatenated raw chunk bodies in request order.
+11. Label data as unadjusted/unknown unless Dhan explicitly confirms an adjustment basis.
+12. Do not implement automatic retries, background retrieval, order APIs, account APIs, positions, holdings, funds, or WebSocket behavior.

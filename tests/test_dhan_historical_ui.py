@@ -104,13 +104,22 @@ class DhanHistoricalPanelTests(unittest.TestCase):
         self.assertNotIn("access_token", result)
         self.assertNotIn("raw_response", result)
 
-    def test_rejects_intraday_window_over_ninety_days(self) -> None:
-        with self.assertRaisesRegex(ValueError, "limited to 90 days"):
+    def test_allows_intraday_window_over_ninety_days_for_provider_chunking(self) -> None:
+        form = DhanRetrievalForm(
+            instrument_id="DHAN:NSE:NSE_EQ:1333",
+            interval="5m",
+            start=self.start,
+            end=self.start + timedelta(days=91),
+        )
+        self.assertEqual(form.end - form.start, timedelta(days=91))
+
+    def test_rejects_intraday_window_over_five_years(self) -> None:
+        with self.assertRaisesRegex(ValueError, "limited to five years"):
             DhanRetrievalForm(
                 instrument_id="DHAN:NSE_EQ:1333",
                 interval="5m",
                 start=self.start,
-                end=self.start + timedelta(days=91),
+                end=self.start + timedelta(days=365 * 5 + 3),
             )
 
     def test_rejects_unsupported_interval(self) -> None:
