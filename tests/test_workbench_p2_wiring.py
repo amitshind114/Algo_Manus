@@ -25,10 +25,19 @@ class WorkbenchP2WiringTests(unittest.TestCase):
         source = inspect.getsource(workbench.run_workbench)
         page_source = inspect.getsource(workbench._data_and_instruments)
         self.assertIn("shared_local_dhan_historical_panel", source)
+        self.assertIn("shared_local_dhan_public_instrument_source", source)
         self.assertIn("render_sidebar_navigation", source)
         self.assertIn("initialize_workbench_state", source)
+        self.assertIn("_dhan_public_master_panel", page_source)
         self.assertIn("dhan_historical_panel", page_source)
         self.assertIn("_dhan_historical_panel", page_source)
+
+    def test_runtime_builds_dhan_public_master_service_without_network_io(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.dict(os.environ, {"ALGO_MANUS_DATA_DIR": temp_dir}):
+                source = runtime.local_dhan_public_instrument_source()
+                self.assertEqual(source.status().broker_name, "dhan")
+                self.assertEqual(source.status().availability, "not_downloaded")
 
     def test_runtime_returns_no_dhan_panel_without_retained_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -13,6 +13,7 @@ from algo_manus.ui.runtime import (
     initialize_workbench_state,
     local_authenticated_historical_source as shared_local_authenticated_historical_source,
     local_data_root as shared_local_data_root,
+    local_dhan_public_instrument_source as shared_local_dhan_public_instrument_source,
     local_paper_ledger as shared_local_paper_ledger,
     local_public_instrument_source as shared_local_public_instrument_source,
     local_retained_dataset_backtests as shared_local_retained_dataset_backtests,
@@ -42,6 +43,7 @@ def run_workbench(st) -> None:
         st.session_state["local_event_bus"] = LocalEventBus()
     service = FixtureWorkbenchService(shared_local_data_root(), event_bus=st.session_state["local_event_bus"])
     public_instrument_source = shared_local_public_instrument_source()
+    dhan_public_instrument_source = shared_local_dhan_public_instrument_source()
     historical_candle_source, angel_session = shared_local_authenticated_historical_source(st)
     dhan_historical_panel = shared_local_dhan_historical_panel(st)
     retained_dataset_backtests = shared_local_retained_dataset_backtests()
@@ -66,6 +68,11 @@ def run_workbench(st) -> None:
             "Angel public master: "
             + ("cached locally" if source_status.availability == "available" else "not downloaded")
         )
+        dhan_source_status = dhan_public_instrument_source.status()
+        st.caption(
+            "Dhan public master: "
+            + ("cached locally" if dhan_source_status.availability == "available" else "not downloaded")
+        )
         historical_status = historical_candle_source.status()
         session_status = angel_session.status()
         st.caption(
@@ -84,6 +91,7 @@ def run_workbench(st) -> None:
             by_id,
             pd,
             public_instrument_source,
+            dhan_public_instrument_source,
             historical_candle_source,
             angel_session,
             dhan_historical_panel,
@@ -498,6 +506,7 @@ def _data_and_instruments(
     by_id,
     pd,
     public_instrument_source,
+    dhan_public_instrument_source,
     historical_candle_source,
     angel_session,
     dhan_historical_panel,
@@ -505,6 +514,8 @@ def _data_and_instruments(
     from algo_manus.application.instrument_lifecycle import InstrumentLifecycleReadService
 
     _header(st, "Data & instruments", "Search the current local universe as you would the future broker-synced instrument master. Manual ticker entry is intentionally not used.")
+    _dhan_public_master_panel(st, pd, dhan_public_instrument_source)
+    st.divider()
     source_status = public_instrument_source.status()
     st.subheader("Angel One public instrument master")
     source_left, source_middle, source_right, source_action = st.columns([1.2, 1.1, 1.45, 1.35])
@@ -615,6 +626,69 @@ def _data_and_instruments(
     )
     st.session_state.selected_ids = tuple(chosen)
     st.caption("This sample universe remains separate until approved historical data is retained and validated. The retained Angel master above never silently replaces the selected research universe.")
+
+
+def _dhan_public_master_panel(st, pd, source) -> None:
+    """Render explicit Dhan public-master sync and retained snapshot evidence."""
+
+    status = source.status()
+    st.subheader("Dhan public instrument master")
+    left, middle, right, action = st.columns([1.2, 1.1, 1.45, 1.35])
+    left.metric("Public source", "Cached" if status.availability == "available" else "Not downloaded")
+    middle.metric("Retained instruments", status.instrument_count)
+    right.caption("Snapshot: " + (status.snapshot_id or "No retained Dhan snapshot"))
+    right.caption(
+        "Last checked: "
+        + (status.last_checked_at.isoformat() if status.last_checked_at else "Not yet checked")
+    )
+    with action:
+        if st.button("Download public Dhan master", type="secondary"):
+            try:
+                result = source.sync()
+            except Exception as exc:
+                st.error(f"Public Dhan master was unavailable; no local snapshot changed: {exc}")
+            else:
+                st.success(
+                    f"Manual source check completed: {result.reason}. "
+                    f"Snapshot {result.snapshot.snapshot_id} is retained locally."
+                )
+                st.rerun()
+    st.caption(
+        "This manual action downloads Dhan's published detailed CSV and retains a normalized, immutable SQLite snapshot. "
+        "It does not authenticate, access account data, fetch prices, submit paper orders or enable execution."
+    )
+    snapshot = source.latest_snapshot()
+    if snapshot is None:
+        st.info("No Dhan master is retained locally yet. Download the public master above before selecting Dhan instruments.")
+        return
+    preview = source.preview(limit=100)
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Symbol": item.trading_symbol,
+                    "Display name": item.display_name,
+                    "Exchange": item.exchange,
+                    "Segment": item.segment,
+                    "Type": item.instrument_type.value,
+                    "Expiry": item.expiry or "—",
+                    "Strike": item.strike or "—",
+                    "Option": item.option_type.value if item.option_type else "—",
+                    "Lot": item.lot_size or "—",
+                    "Tick": item.tick_size or "—",
+                    "Instrument identity": item.instrument_id,
+                }
+                for item in preview
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+        height=280,
+    )
+    st.caption(
+        f"Showing the first {len(preview)} retained records from snapshot {snapshot.snapshot_id}. "
+        "The Dhan historical panel below accepts only active records from this retained snapshot."
+    )
 
 
 def _dhan_historical_panel(st, panel) -> None:

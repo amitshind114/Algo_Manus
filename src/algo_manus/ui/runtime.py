@@ -57,6 +57,22 @@ def local_public_instrument_source():
     )
 
 
+def local_dhan_public_instrument_source():
+    """Return the manual public Dhan master service."""
+
+    from algo_manus.application.public_instrument_source import PublicInstrumentSourceService
+    from algo_manus.infrastructure.instruments.dhan import DhanInstrumentMasterProvider
+    from algo_manus.infrastructure.instruments.sqlite_repository import (
+        SqliteInstrumentSnapshotRepository,
+    )
+
+    data_root = local_data_root()
+    return PublicInstrumentSourceService(
+        SqliteInstrumentSnapshotRepository(data_root / "instrument_master.sqlite3"),
+        DhanInstrumentMasterProvider(),
+    )
+
+
 def local_authenticated_historical_source(st: Any):
     """Return session-scoped authenticated historical-source services."""
 

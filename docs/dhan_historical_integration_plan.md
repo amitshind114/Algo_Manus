@@ -103,6 +103,21 @@ Added an isolated, reusable Streamlit panel in `ui/dhan_historical.py`.
 - Contains no order, account, position, WebSocket, scheduler, fixture-fallback, or cloud capability.
 - Is intentionally independent of the current monolithic workbench so it can be mounted after workbench modularization.
 
+### Phase 7 - Public instrument-master and immutable snapshot workflow
+
+Status: COMPLETE
+
+Added `DhanInstrumentMasterProvider` for Dhan's published detailed instrument CSV and mounted it behind the existing public-source and SQLite snapshot workflow.
+
+- Normalizes equity, index, equity/index derivatives, currency derivatives, and commodity derivatives into canonical `Instrument` records.
+- Preserves Dhan `SECURITY_ID` values as provider tokens and never uses symbols as identity.
+- Rejects missing columns, malformed values, invalid option markers, unsupported mappings, and duplicate canonical identities.
+- Retains the raw CSV SHA-256 and source URI in each immutable `InstrumentMasterSnapshot`.
+- Repeated identical downloads update only local check time; historical snapshots are never overwritten.
+- Adds an explicit Data & instruments action for downloading and previewing the retained Dhan master.
+- Dhan historical retrieval remains blocked until an active retained Dhan snapshot exists.
+- Tests use injected CSV bytes for deterministic coverage; the current public CSV was also normalized successfully as a read-only compatibility check.
+
 ## Explicit exclusions
 
 The following are excluded from this integration:

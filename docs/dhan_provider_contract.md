@@ -7,6 +7,7 @@ Contract confirmed from the official DhanHQ v2 Historical Data documentation and
 Sources:
 
 - https://dhanhq.co/docs/v2/historical-data/
+- https://dhanhq.co/docs/v2/instruments/
 - https://dhanhq.co/docs/v2/annexure/
 - https://dhan.co/support/platforms/dhanhq-api/what-are-the-api-rate-limits-for-dhan/
 
@@ -15,6 +16,8 @@ Sources:
 | Field | Status | Confirmed value | Source |
 |---|---|---|---|
 | API base URL | CONFIRMED | `https://api.dhan.co/v2` | DhanHQ v2 Historical Data documentation |
+| Public instrument-master source | CONFIRMED | `https://images.dhan.co/api-data/api-scrip-master-detailed.csv` | DhanHQ v2 Instruments documentation |
+| Public instrument-master format | CONFIRMED | Detailed UTF-8 CSV with exchange, segment, security ID, instrument, expiry, strike, option, lot and tick fields | DhanHQ v2 Instruments documentation |
 | API version | CONFIRMED | v2 | DhanHQ v2 Historical Data documentation |
 | Daily candles endpoint | CONFIRMED | `POST /charts/historical` | DhanHQ v2 Historical Data documentation |
 | Intraday candles endpoint | CONFIRMED | `POST /charts/intraday` | DhanHQ v2 Historical Data documentation |
@@ -59,3 +62,12 @@ Sources:
 10. Validate combined chunk responses for strict chronological ordering and no duplicates; hash concatenated raw chunk bodies in request order.
 11. Label data as unadjusted/unknown unless Dhan explicitly confirms an adjustment basis.
 12. Do not implement automatic retries, background retrieval, order APIs, account APIs, positions, holdings, funds, or WebSocket behavior.
+
+## Public instrument-master snapshot rules
+
+1. Download the fixed detailed CSV only through an explicit user-invoked sync.
+2. Normalize Dhan exchange and segment values into canonical identities such as `DHAN:NSE:NSE_EQ:<security_id>`, `DHAN:NSE:NSE_FNO:<security_id>`, `DHAN:NSE:IDX_I:<security_id>`, and `DHAN:MCX:MCX_COMM:<security_id>`.
+3. Preserve provider security IDs as text; symbols and display names are metadata, not identity.
+4. Reject missing required fields, malformed dates/numbers, invalid option markers, unsupported mappings, and duplicate canonical identities.
+5. Persist each accepted response through `PublicInstrumentSourceService` and `SqliteInstrumentSnapshotRepository`; content-identical downloads update only local check time and never replace the retained snapshot.
+6. Never refresh the source during import, page render, status display, or historical-data retrieval.
